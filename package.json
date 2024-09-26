@@ -1,5 +1,5 @@
 {
-  "name": "kwik",
+  "name": "kwikjs",
   "version": "1.0.0",
   "description": "Rich Component library",
   "main": "dist/bundle.js",
