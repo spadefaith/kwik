@@ -1,15 +1,8 @@
 import JSXProcess from "./jsx";
 import { stringToHTML } from "../utils/el";
+import Lifecycle from "./lifecycle";
 
-const Custom = (
-  component,
-  {
-    connectedCallback,
-    disconnectedCallback,
-    attributeChangedCallback,
-    updateCallback,
-  }
-) => {
+const Custom = (component, lifecycle: Lifecycle) => {
   const id = component.id,
     name = component.name,
     attributes = component.attributes,
@@ -49,18 +42,17 @@ const Custom = (
           this.appendChild(child);
         });
 
-        connectedCallback(this);
+        lifecycle.broadcast("rendered", this);
       }
       disconnectedCallback() {
-        // console.log("Custom element removed from page.");
-        disconnectedCallback();
+        lifecycle.broadcast("destroy", this);
       }
 
       adoptedCallback() {
-        // console.log("Custom element moved to new page.");
+        lifecycle.broadcast("adopted", this);
       }
       attributeChangedCallback(name, oldValue, newValue) {
-        attributeChangedCallback(name, oldValue, newValue);
+        lifecycle.broadcast("change", { name, oldValue, newValue });
       }
     }
   );

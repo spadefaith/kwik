@@ -3,6 +3,7 @@ import { generateId } from "./utils/rand";
 import createSignal from "./services/signal";
 import { getComments, stringToHTML } from "./utils/el";
 import ArrayWrapper from "./utils/array";
+import Lifecycle from "./services/lifecycle";
 
 const Component = class {
   name: string;
@@ -16,6 +17,7 @@ const Component = class {
   signals: any;
   styles: any;
   events: any;
+  lifecycle: Lifecycle;
   constructor(callback) {
     this.callback = callback;
     this.id = generateId();
@@ -26,8 +28,37 @@ const Component = class {
     this.signals = {};
     this.styles = {};
     this.events = [];
+
+    this.lifecycle = new Lifecycle();
+    this._initLifecycle();
     this._createTemplate();
     this._createCustom();
+  }
+  _initLifecycle() {
+    this.lifecycle.rendered((el) => {
+      Object.keys(this.styles).forEach((id) => {
+        const styles = this.styles[id];
+        const target: HTMLElement = document.querySelector(
+          `[data-style=${id}]`
+        );
+
+        if (target) {
+          Object.keys(styles).forEach((key) => {
+            target.style[key] = styles[key];
+          });
+        }
+      });
+    });
+
+    this.lifecycle.change(({ name, oldValue, newValue }) => {
+      if (this.signals[name]) {
+        this.signals[name].forEach((signal) => {
+          if (oldValue != newValue) {
+            signal.value = newValue;
+          }
+        });
+      }
+    });
   }
   _createTemplate() {
     const template = this.callback({
@@ -74,7 +105,8 @@ const Component = class {
     return signal;
   }
   _connectedCallback(callback) {
-    this.componentCallback = callback;
+    this.lifecycle.rendered(callback);
+    this.lifecycle.destroy(() => callback());
   }
   _eventsCallback(events) {
     return Object.keys(events)
@@ -192,39 +224,7 @@ const Component = class {
     return `<!--render ${signal.id}-->`;
   }
   _createCustom() {
-    this.custom = Custom(this, {
-      updateCallback: (el) => {},
-      connectedCallback: (el) => {
-        Object.keys(this.styles).forEach((id) => {
-          const styles = this.styles[id];
-          const target: HTMLElement = document.querySelector(
-            `[data-style=${id}]`
-          );
-
-          if (target) {
-            Object.keys(styles).forEach((key) => {
-              target.style[key] = styles[key];
-            });
-          }
-        });
-
-        if (this.componentCallback) {
-          this.componentDisconnectCallback = this.componentCallback(el);
-        }
-      },
-      disconnectedCallback: () => {
-        this.componentDisconnectCallback && this.componentDisconnectCallback();
-      },
-      attributeChangedCallback: (attr, oldValue, newValue) => {
-        if (this.signals[attr]) {
-          this.signals[attr].forEach((signal) => {
-            if (oldValue != newValue) {
-              signal.value = newValue;
-            }
-          });
-        }
-      },
-    });
+    this.custom = Custom(this, this.lifecycle);
   }
   _registerSignal(name, signal) {
     if (!this.signals[name]) {
