@@ -1,0 +1,6 @@
+{
+  "exec": "node build.js",
+  "ignore": ["test/*", "node_modules/*"],
+  "watch": ["src/**/*"],
+  "ext": "js,ts"
+}

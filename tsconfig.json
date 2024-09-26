@@ -1,0 +1,12 @@
+
+{
+    "compilerOptions": {
+        "lib": ["ES6","ES5","DOM","ES2021"],
+      "strict": false,                   
+      "skipLibCheck": true        ,
+      "emitDeclarationOnly": true,
+      "declaration": true,
+      "downlevelIteration": true
+    },     
+    "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  }
