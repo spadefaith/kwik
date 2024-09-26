@@ -7,10 +7,12 @@ export default class Blueprint {
     this.callback = callback;
     this.current = null;
   }
-
-  toString() {
+  build() {
     this.current = new Component(this.callback);
     return this.current.name;
+  }
+  toString() {
+    return this.build();
   }
 
   close() {
