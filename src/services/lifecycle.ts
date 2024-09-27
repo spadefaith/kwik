@@ -1,3 +1,5 @@
+import { loop } from "../utils/loop";
+
 export default class Lifecycle {
   subscriber: any;
   constructor() {
@@ -25,24 +27,27 @@ export default class Lifecycle {
     this.subscriber.adopted.push(callback);
   }
 
-  broadcast(event: "destroy" | "adopted" | "rendered" | "change", data) {
-    if (this.subscriber[event]) {
-      this.subscriber[event].forEach((callback) => {
-        callback(data);
-      });
+  on(event, callback) {
+    if (!this.subscriber[event]) {
+      this.subscriber[event] = [];
     }
+
+    this.subscriber[event].push(callback);
+  }
+
+  broadcast(event, data) {
+    loop(this.subscriber[event], (callback) => {
+      callback(data);
+    });
   }
 
   clean(event) {
-    if (event && this.subscriber[event]) {
-      this.subscriber[event] = [];
+    if (event) {
+      this.subscriber[event] && (this.subscriber[event] = []);
     } else {
-      this.subscriber = {
-        destroy: [],
-        rendered: [],
-        change: [],
-        adopted: [],
-      };
+      loop(this.subscriber, (event) => {
+        this.subscriber[event] = [];
+      });
     }
   }
 }

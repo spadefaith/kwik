@@ -1,4 +1,5 @@
 import { stringToHTML } from "../utils/el";
+import { loop } from "../utils/loop";
 
 export default class JSXProcess {
   renderFunction: null | (() => any);
@@ -25,9 +26,12 @@ export default class JSXProcess {
   toHtml() {
     const str = this.jsx;
     const html = stringToHTML(str);
-    this.component.events.forEach((event) => {
+
+    loop(this.component.events, (event) => {
       const { type, id, handler } = event;
-      const target = html.querySelector(`[data-event=click-${id}]`);
+      const target: HTMLElement = html.querySelector(
+        `[data-event=${type}-${id}]`
+      );
       if (target) {
         target.addEventListener(type, (e) => {
           handler(e);

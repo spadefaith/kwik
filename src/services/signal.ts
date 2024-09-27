@@ -1,30 +1,36 @@
 import { generateId } from "../utils/rand";
 
-export default function createSignal(initialValue) {
-  let _value = initialValue;
-  let subscribers = [];
-
-  function notify() {
-    for (let subscriber of subscribers) {
-      subscriber(_value);
+export default class Signal {
+  id: string;
+  _value: any;
+  subscribers: any[];
+  constructor(initialValue) {
+    this.id = generateId();
+    this._value = initialValue;
+    this.subscribers = [];
+  }
+  _notify() {
+    for (let subscriber of this.subscribers) {
+      subscriber(this._value);
     }
   }
 
-  return {
-    id: generateId(),
-    get value() {
-      return _value;
-    },
-    set value(v) {
-      _value = v;
-      notify();
-    },
-    subscribe: (subscriber) => {
-      subscribers.push(subscriber);
-    },
-    toString: () => _value.toString(),
-    get isSignal() {
-      return true;
-    },
-  };
+  get value() {
+    return this._value;
+  }
+  set value(v) {
+    this._value = v;
+    this._notify();
+  }
+  subscribe(subscriber) {
+    this.subscribers.push(subscriber);
+  }
+
+  toString() {
+    return this._value.toString();
+  }
+
+  get isSignal() {
+    return true;
+  }
 }

@@ -1,5 +1,5 @@
 import Component from "./components";
-import createSignal from "./services/signal";
+import Signal from "./services/signal";
 import Blueprint from "./blueprint";
-
-export { Component, createSignal, Blueprint };
+import render from "./utils/append";
+export { render, Component, Blueprint, Signal };

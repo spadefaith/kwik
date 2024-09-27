@@ -1,16 +1,18 @@
 import JSXProcess from "./jsx";
 import { stringToHTML } from "../utils/el";
 import Lifecycle from "./lifecycle";
+import { loop } from "../utils/loop";
+import { COMPONENT_LIFECYCLE } from "../consts/component-lifecycle";
 
 const Custom = (component, lifecycle: Lifecycle) => {
   const id = component.id,
     name = component.name,
-    attributes = component.attributes,
+    attributes = component.attributes.map((item) => item.name),
     template = component.template;
 
   let vdom = new JSXProcess(component);
   let tempalateHtml = null;
-  let initialInnerHtml = "";
+  let initialInnerHtml: any = "";
 
   if (customElements.get(name)) {
     return customElements.get(name);
@@ -23,6 +25,10 @@ const Custom = (component, lifecycle: Lifecycle) => {
 
       constructor() {
         super();
+
+        initialInnerHtml = stringToHTML(this.innerHTML);
+
+        this.innerHTML = "";
       }
       connectedCallback() {
         if (typeof template == "function") {
@@ -31,28 +37,54 @@ const Custom = (component, lifecycle: Lifecycle) => {
           tempalateHtml = html;
         }
 
-        initialInnerHtml = this.innerHTML;
+        this._replaceSlot(initialInnerHtml, tempalateHtml);
 
-        this.innerHTML = "";
-        const children = tempalateHtml.childNodes;
-        [
-          ...(stringToHTML(initialInnerHtml).childNodes as any),
-          ...children,
-        ].forEach((child) => {
-          this.appendChild(child);
-        });
+        loop(initialInnerHtml.childNodes, (child) => this.appendChild(child));
+        loop(tempalateHtml.childNodes, (child) => this.appendChild(child));
 
-        lifecycle.broadcast("rendered", this);
+        lifecycle.broadcast(COMPONENT_LIFECYCLE.RENDERED, this);
       }
       disconnectedCallback() {
-        lifecycle.broadcast("destroy", this);
+        lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, this);
       }
 
       adoptedCallback() {
-        lifecycle.broadcast("adopted", this);
+        lifecycle.broadcast(COMPONENT_LIFECYCLE.ADOPTED, this);
       }
       attributeChangedCallback(name, oldValue, newValue) {
-        lifecycle.broadcast("change", { name, oldValue, newValue });
+        lifecycle.broadcast(COMPONENT_LIFECYCLE.CHANGE, {
+          name,
+          oldValue,
+          newValue,
+        });
+      }
+
+      _replaceSlot(src, target) {
+        const slots = src.querySelectorAll("[slot]");
+
+        loop(slots, (slot, i) => {
+          const slotName = slot.getAttribute("slot");
+          const targetSlot = target.querySelector(`slot[name=${slotName}]`);
+          if (targetSlot) {
+            const attributes = targetSlot.attributes;
+
+            loop(attributes, (attr) => {
+              if (attr.name == "name") return;
+              slot.setAttribute(attr.name, attr.value);
+            });
+
+            slot.removeAttribute("slot");
+
+            targetSlot.replaceWith(slot);
+          } else {
+            slot.remove();
+          }
+        });
+        /*
+          remove slots without substiture;
+        */
+        const targetSlots = target.querySelectorAll("slot[name]");
+        loop(targetSlots, (slot, i) => slot.remove());
       }
     }
   );

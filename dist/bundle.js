@@ -1,2 +1,572 @@
-var Kwik=(()=>{var _=Object.defineProperty;var S=Object.getOwnPropertyDescriptor;var E=Object.getOwnPropertyNames;var T=Object.prototype.hasOwnProperty;var L=(e,t)=>{for(var s in t)_(e,s,{get:t[s],enumerable:!0})},$=(e,t,s,r)=>{if(t&&typeof t=="object"||typeof t=="function")for(let i of E(t))!T.call(e,i)&&i!==s&&_(e,i,{get:()=>t[i],enumerable:!(r=S(t,i))||r.enumerable});return e};var v=e=>$(_({},"__esModule",{value:!0}),e);var M={};L(M,{Blueprint:()=>g,Component:()=>C,createSignal:()=>f});var k=(e,t)=>{let s="//comment()",r=[],i=document.evaluate(s,e,null,XPathResult.UNORDERED_NODE_SNAPSHOT_TYPE,null);for(let n=0,a=i.snapshotLength;n<a;++n){let c=i.snapshotItem(n);t?t==c.nodeValue&&r.push(c):r.push(c)}return r},h=e=>new DOMParser().parseFromString(e,"text/html").body;var b=class{renderFunction;component;jsx;events;signals;constructor(t){this.component=t;let s=t.template;this.renderFunction=null,typeof s=="function"?(this.renderFunction=s,this.jsx=s()):this.jsx=s,this.events=[],this.signals=[]}toHtml(){let t=this.jsx,s=h(t);return this.component.events.forEach(r=>{let{type:i,id:n,handler:a}=r,c=s.querySelector(`[data-event=click-${n}]`);c&&c.addEventListener(i,d=>{a(d)})}),{str:t,html:s}}};var H=(e,t)=>{let s=e.id,r=e.name,i=e.attributes,n=e.template,a=new b(e),c=null,d="";return customElements.get(r)||customElements.define(r,class extends HTMLElement{static observedAttributes=[...i,"key"];constructor(){super()}connectedCallback(){if(typeof n=="function"){let{str:l,html:m}=a.toHtml();c=m}d=this.innerHTML,this.innerHTML="";let o=c.childNodes;[...h(d).childNodes,...o].forEach(l=>{this.appendChild(l)}),t.broadcast("rendered",this)}disconnectedCallback(){t.broadcast("destroy",this)}adoptedCallback(){t.broadcast("adopted",this)}attributeChangedCallback(o,l,m){t.broadcast("change",{name:o,oldValue:l,newValue:m})}}),customElements.get(r)},x=H;var u=()=>`a${crypto.randomUUID().replaceAll("-","")}a`;function f(e){let t=e,s=[];function r(){for(let i of s)i(t)}return{id:u(),get value(){return t},set value(i){t=i,r()},subscribe:i=>{s.push(i)},toString:()=>t.toString(),get isSignal(){return!0}}}var p=class{constructor(t){this.array=t;this.array=t}get data(){return Array.isArray(this.array)?this:this.array}each(t){return this.array.map(t).join("")}};var y=class{subscriber;constructor(){this.subscriber={destroy:[],rendered:[],change:[],adopted:[]}}destroy(t){this.subscriber.destroy.push(t)}rendered(t){this.subscriber.rendered.push(t)}change(t){this.subscriber.change.push(t)}adopted(t){this.subscriber.adopted.push(t)}broadcast(t,s){this.subscriber[t]&&this.subscriber[t].forEach(r=>{r(s)})}clean(t){t&&this.subscriber[t]?this.subscriber[t]=[]:this.subscriber={destroy:[],rendered:[],change:[],adopted:[]}}};var I=class{name;id;attributes;template;callback;custom;componentCallback;componentDisconnectCallback;signals;styles;events;lifecycle;constructor(e){this.callback=e,this.id=u(),this.name=`x-${this.id}`,this.attributes=[],this.template={},this.signals={},this.styles={},this.events=[],this.lifecycle=new y,this._initLifecycle(),this._createTemplate(),this._createCustom()}_initLifecycle(){this.lifecycle.rendered(e=>{Object.keys(this.styles).forEach(t=>{let s=this.styles[t],r=document.querySelector(`[data-style=${t}]`);r&&Object.keys(s).forEach(i=>{r.style[i]=s[i]})})}),this.lifecycle.change(({name:e,oldValue:t,newValue:s})=>{this.signals[e]&&this.signals[e].forEach(r=>{t!=s&&(r.value=s)})})}_createTemplate(){let e=this.callback({node:this._nodeCallback.bind(this),render:this._renderCallback.bind(this),attr:this._attrCallback.bind(this),events:this._eventsCallback.bind(this),connectedCallback:this._connectedCallback.bind(this),props:this._propsCallback.bind(this),style:this._styleCallback.bind(this)});this.template=e}_styleCallback(e){let t=u();return this.styles[t]=e,Object.keys(e).forEach(s=>{let r=e[s];r.isSignal&&(this._registerSignal(s,r),r.subscribe(i=>{let n=document.querySelector(`[data-style=${t}]`);n&&(n.style[s]=i)}))}),`data-style=${t}`}_propsCallback(e,t){this.attributes.push(e);let s=f(t);return this._registerSignal(e,s),s}_connectedCallback(e){this.lifecycle.rendered(e),this.lifecycle.destroy(()=>e())}_eventsCallback(e){return Object.keys(e).map(t=>{let s=e[t],r=u();return this.events.push({id:r,type:t,handler:s}),`data-event=${t}-${r}`}).join(" ")}_attrCallback(e,t){return t.isSignal&&(this._registerSignal(t.id,t),t.subscribe(s=>{})),`${e}=${t}`}_nodeCallback(e){return this._registerSignal(e.id,e),e.subscribe(t=>{let s=e.id,r=document.querySelector(this.name);r&&setTimeout(()=>{let i=k(r,`node ${s}`);i.length&&i.forEach(n=>{let a=n.nextSibling;a.nodeType==3&&(a.nodeValue[0]==" "?a.nodeValue=` ${e}`:a.nodeValue=e)})})}),`<!--node ${e.id}--> ${e}`}_renderCallback(e,t,s={}){let r=typeof t=="string",i=typeof t=="function";return s.replace==null&&(s.replace=!!r),e.subscribe(n=>{Array.isArray(n)&&(n=new p(n).data);let a=e.id,c=document.querySelector(this.name);c&&setTimeout(()=>{let d=k(c,`render ${a}`);d.length&&d.forEach(o=>{let l=null;if(r)if(s.renderer)l=s.renderer.render(t,{list:n});else throw new Error("renderer is required");else i&&(l=t(n));if(o.isInitialized||(o.isInitialized=!0),o.isInitialized&&s.replace&&o.nextSibling.remove(),!l)return;let m=h(l);o.parentElement.insertBefore(m.firstChild,o.nextSibling)})})}),`<!--render ${e.id}-->`}_createCustom(){this.custom=x(this,this.lifecycle)}_registerSignal(e,t){this.signals[e]||(this.signals[e]=[]),this.signals[e].push(t)}},C=I;var g=class{callback;current;constructor(t){this.callback=t,this.current=null}build(){return this.current=new C(this.callback),this.current.name}toString(){return this.build()}close(){return this.current.name}};return v(M);})();
+var Kwik = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // src/index.ts
+  var src_exports = {};
+  __export(src_exports, {
+    Blueprint: () => Blueprint,
+    Component: () => components_default,
+    Signal: () => Signal,
+    render: () => render
+  });
+
+  // src/utils/el.ts
+  var getComments = (node, target) => {
+    const xPath = "//comment()", result = [];
+    let query = document.evaluate(
+      xPath,
+      node,
+      null,
+      XPathResult.UNORDERED_NODE_SNAPSHOT_TYPE,
+      null
+    );
+    for (let i = 0, length = query.snapshotLength; i < length; ++i) {
+      const item = query.snapshotItem(i);
+      if (target) {
+        if (target == item.nodeValue) {
+          result.push(item);
+        }
+      } else {
+        result.push(item);
+      }
+    }
+    return result;
+  };
+  var stringToHTML = (str) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(str, "text/html");
+    return doc.body;
+  };
+
+  // src/utils/loop.ts
+  var loop = (array, callback) => {
+    if (!array) return;
+    switch (array.constructor.name) {
+      case "Array": {
+        for (let i = 0; i < array.length; i++) {
+          callback(array[i], i);
+        }
+        break;
+      }
+      case "Object": {
+        for (let key in array) {
+          callback(array[key], key);
+        }
+        break;
+      }
+      case "Map": {
+        for (let [key, value] of array.entries()) {
+          callback(value, key);
+        }
+        break;
+      }
+      default: {
+        if (array.length) {
+          for (let i = 0; i < array.length; i++) {
+            callback(array[i], i);
+          }
+        }
+      }
+    }
+  };
+
+  // src/services/jsx.ts
+  var JSXProcess = class {
+    renderFunction;
+    component;
+    jsx;
+    events;
+    signals;
+    constructor(component) {
+      this.component = component;
+      const ctx = component.template;
+      this.renderFunction = null;
+      if (typeof ctx == "function") {
+        this.renderFunction = ctx;
+        this.jsx = ctx();
+      } else {
+        this.jsx = ctx;
+      }
+      this.events = [];
+      this.signals = [];
+    }
+    toHtml() {
+      const str = this.jsx;
+      const html = stringToHTML(str);
+      loop(this.component.events, (event) => {
+        const { type, id, handler } = event;
+        const target = html.querySelector(
+          `[data-event=${type}-${id}]`
+        );
+        if (target) {
+          target.addEventListener(type, (e) => {
+            handler(e);
+          });
+        }
+      });
+      return { str, html };
+    }
+  };
+
+  // src/consts/component-lifecycle.ts
+  var RENDERED = "rendered";
+  var DESTROY = "destroy";
+  var CHANGE = "change";
+  var ADOPTED = "adopted";
+  var COMPONENT_LIFECYCLE = { RENDERED, DESTROY, CHANGE, ADOPTED };
+
+  // src/services/custom.ts
+  var Custom = (component, lifecycle) => {
+    const id = component.id, name = component.name, attributes = component.attributes.map((item) => item.name), template = component.template;
+    let vdom = new JSXProcess(component);
+    let tempalateHtml = null;
+    let initialInnerHtml = "";
+    if (customElements.get(name)) {
+      return customElements.get(name);
+    }
+    customElements.define(
+      name,
+      class extends HTMLElement {
+        static observedAttributes = [...attributes, "key"];
+        constructor() {
+          super();
+          initialInnerHtml = stringToHTML(this.innerHTML);
+          this.innerHTML = "";
+        }
+        connectedCallback() {
+          if (typeof template == "function") {
+            const { str, html } = vdom.toHtml();
+            tempalateHtml = html;
+          }
+          this._replaceSlot(initialInnerHtml, tempalateHtml);
+          loop(initialInnerHtml.childNodes, (child) => this.appendChild(child));
+          loop(tempalateHtml.childNodes, (child) => this.appendChild(child));
+          lifecycle.broadcast(COMPONENT_LIFECYCLE.RENDERED, this);
+        }
+        disconnectedCallback() {
+          lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, this);
+        }
+        adoptedCallback() {
+          lifecycle.broadcast(COMPONENT_LIFECYCLE.ADOPTED, this);
+        }
+        attributeChangedCallback(name2, oldValue, newValue) {
+          lifecycle.broadcast(COMPONENT_LIFECYCLE.CHANGE, {
+            name: name2,
+            oldValue,
+            newValue
+          });
+        }
+        _replaceSlot(src, target) {
+          const slots = src.querySelectorAll("[slot]");
+          loop(slots, (slot, i) => {
+            const slotName = slot.getAttribute("slot");
+            const targetSlot = target.querySelector(`slot[name=${slotName}]`);
+            if (targetSlot) {
+              const attributes2 = targetSlot.attributes;
+              loop(attributes2, (attr) => {
+                if (attr.name == "name") return;
+                slot.setAttribute(attr.name, attr.value);
+              });
+              slot.removeAttribute("slot");
+              targetSlot.replaceWith(slot);
+            } else {
+              slot.remove();
+            }
+          });
+          const targetSlots = target.querySelectorAll("slot[name]");
+          loop(targetSlots, (slot, i) => slot.remove());
+        }
+      }
+    );
+    return customElements.get(name);
+  };
+  var custom_default = Custom;
+
+  // src/utils/rand.ts
+  var generateId = () => `a${crypto.randomUUID().replaceAll("-", "")}a`;
+
+  // src/utils/array.ts
+  var ArrayWrapper = class {
+    constructor(array) {
+      this.array = array;
+      this.array = array;
+    }
+    get data() {
+      if (Array.isArray(this.array)) {
+        return this;
+      } else {
+        return this.array;
+      }
+    }
+    each(callback) {
+      return this.array.map(callback).join("");
+    }
+  };
+
+  // src/services/lifecycle.ts
+  var Lifecycle = class {
+    subscriber;
+    constructor() {
+      this.subscriber = {
+        destroy: [],
+        rendered: [],
+        change: [],
+        adopted: []
+      };
+    }
+    destroy(callback) {
+      this.subscriber.destroy.push(callback);
+    }
+    rendered(callback) {
+      this.subscriber.rendered.push(callback);
+    }
+    change(callback) {
+      this.subscriber.change.push(callback);
+    }
+    adopted(callback) {
+      this.subscriber.adopted.push(callback);
+    }
+    on(event, callback) {
+      if (!this.subscriber[event]) {
+        this.subscriber[event] = [];
+      }
+      this.subscriber[event].push(callback);
+    }
+    broadcast(event, data) {
+      loop(this.subscriber[event], (callback) => {
+        callback(data);
+      });
+    }
+    clean(event) {
+      if (event) {
+        this.subscriber[event] && (this.subscriber[event] = []);
+      } else {
+        loop(this.subscriber, (event2) => {
+          this.subscriber[event2] = [];
+        });
+      }
+    }
+  };
+
+  // src/services/signal.ts
+  var Signal = class {
+    id;
+    _value;
+    subscribers;
+    constructor(initialValue) {
+      this.id = generateId();
+      this._value = initialValue;
+      this.subscribers = [];
+    }
+    _notify() {
+      for (let subscriber of this.subscribers) {
+        subscriber(this._value);
+      }
+    }
+    get value() {
+      return this._value;
+    }
+    set value(v) {
+      this._value = v;
+      this._notify();
+    }
+    subscribe(subscriber) {
+      this.subscribers.push(subscriber);
+    }
+    toString() {
+      return this._value.toString();
+    }
+    get isSignal() {
+      return true;
+    }
+  };
+
+  // src/components.ts
+  var Component = class {
+    name;
+    id;
+    attributes;
+    template;
+    callback;
+    custom;
+    componentCallback;
+    componentDisconnectCallback;
+    signals;
+    styles;
+    events;
+    lifecycle;
+    props;
+    constructor(callback) {
+      this.callback = callback;
+      this.id = generateId();
+      this.name = `x-${this.id}`;
+      this.attributes = [];
+      this.template = {};
+      this.signals = {};
+      this.styles = {};
+      this.events = [];
+      this.lifecycle = new Lifecycle();
+      this._initLifecycle();
+      this._createTemplate();
+      this._createCustom();
+    }
+    _initLifecycle() {
+      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el) => {
+        loop(this.styles, (id) => {
+          const styles = this.styles[id];
+          const target = document.querySelector(
+            `[data-style=${id}]`
+          );
+          if (target) {
+            loop(styles, (key) => {
+              target.style[key] = styles[key];
+            });
+          }
+        });
+      });
+      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el) => {
+        loop(this.signals, (a) => {
+          const { signal, callbacks } = a;
+          if (callbacks.length) {
+            loop(callbacks, (callback) => {
+              callback && callback(signal.value);
+            });
+          }
+        });
+      });
+      this.lifecycle.on(
+        COMPONENT_LIFECYCLE.CHANGE,
+        ({ name, oldValue, newValue }) => {
+          const getSignalId = this.attributes.find((item) => item.name == name);
+          if (getSignalId) {
+            const conf = this.signals[getSignalId.signal];
+            if (oldValue != newValue) {
+              conf.signal.value = newValue;
+            }
+          }
+        }
+      );
+      this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, () => {
+        this.attributes = [];
+        this.template = {};
+        this.signals = {};
+        this.styles = {};
+        this.events = [];
+      });
+    }
+    _createTemplate() {
+      const template = this.callback({
+        node: this._nodeCallback.bind(this),
+        render: this._renderCallback.bind(this),
+        attr: this._attrCallback.bind(this),
+        events: this._eventsCallback.bind(this),
+        props: this._propsCallback.bind(this),
+        style: this._styleCallback.bind(this),
+        ref: this._refCallback.bind(this),
+        signal: (value) => {
+          return new Signal(value);
+        },
+        onConnected: this._connectedCallback.bind(this)
+      });
+      this.template = template;
+    }
+    _refCallback(callback) {
+      const id = generateId();
+      if (callback) {
+        this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, () => {
+          const target = document.querySelector(`[data-ref=${id}]`);
+          callback(target);
+        });
+      }
+      return {
+        get current() {
+          return document.querySelector(`[data-ref=${id}]`);
+        },
+        toString() {
+          return `data-ref=${id}`;
+        }
+      };
+    }
+    _styleCallback(obj) {
+      const id = generateId();
+      this.styles[id] = obj;
+      loop(obj, (key) => {
+        const value = obj[key];
+        if (value.isSignal) {
+          const callback = (v) => {
+            const target = document.querySelector(
+              `[data-style=${id}]`
+            );
+            if (target) {
+              target.style[key] = v;
+            }
+          };
+          this._registerSignal(value, callback);
+          value.subscribe(callback);
+        }
+      });
+      return `data-style=${id}`;
+    }
+    _propsCallback(name, initialValue) {
+      const signal = new Signal(initialValue);
+      this.attributes.push({ signal: signal.id, name });
+      this._registerSignal(signal);
+      return signal;
+    }
+    _connectedCallback(callback) {
+      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, callback);
+      this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, () => callback());
+    }
+    _eventsCallback(events) {
+      return Object.keys(events).map((key) => {
+        const handler = events[key];
+        const id = generateId();
+        this.events.push({
+          id,
+          type: key,
+          handler
+        });
+        return `data-event=${key}-${id}`;
+      }).join(" ");
+    }
+    _attrCallback(attr, signal) {
+      if (signal.isSignal) {
+        this._registerSignal(signal);
+        signal.subscribe((value) => {
+        });
+      }
+      return `${attr}=${signal}`;
+    }
+    _nodeCallback(signal) {
+      this._registerSignal(signal);
+      signal.subscribe((value) => {
+        const id = signal.id;
+        const self = document.querySelector(this.name);
+        if (self) {
+          setTimeout(() => {
+            const node = getComments(self, `node ${id}`);
+            if (node.length) {
+              loop(node, (n) => {
+                const next = n.nextSibling;
+                if (next.nodeType == 3) {
+                  if (next.nodeValue[0] == " ") {
+                    next.nodeValue = ` ${signal}`;
+                  } else {
+                    next.nodeValue = signal;
+                  }
+                }
+              });
+            }
+          });
+        }
+      });
+      return `<!--node ${signal.id}--> ${signal}`;
+    }
+    _renderCallback(signal, template, opts = {}) {
+      const templateIsString = typeof template == "string";
+      const templateIsFunction = typeof template == "function";
+      if (opts.replace == void 0) {
+        opts.replace = templateIsString ? true : false;
+      }
+      const callback = (value) => {
+        if (Array.isArray(value)) {
+          value = new ArrayWrapper(value).data;
+        }
+        const id = signal.id;
+        const self = document.querySelector(this.name);
+        if (self) {
+          setTimeout(() => {
+            const node = getComments(self, `render ${id}`);
+            if (node.length) {
+              loop(node, (n) => {
+                let r = null;
+                if (templateIsString) {
+                  if (opts.renderer) {
+                    r = opts.renderer.render(template, {
+                      list: value
+                    });
+                  } else {
+                    throw new Error("renderer is required");
+                  }
+                } else if (templateIsFunction) {
+                  r = template(value);
+                }
+                if (!n.isInitialized) {
+                  n.isInitialized = true;
+                }
+                if (n.isInitialized) {
+                  if (opts.replace) {
+                    const next = n.nextSibling;
+                    next.remove();
+                  }
+                }
+                if (!r) {
+                  return;
+                }
+                const rHtml = stringToHTML(r);
+                n.parentElement.insertBefore(rHtml.firstChild, n.nextSibling);
+              });
+            }
+          });
+        }
+      };
+      signal.subscribe(callback);
+      this._registerSignal(signal, callback);
+      return `<!--render ${signal.id}-->`;
+    }
+    _createCustom() {
+      this.custom = custom_default(this, this.lifecycle);
+    }
+    _registerSignal(signal, callback) {
+      if (!this.signals[signal.id]) {
+        this.signals[signal.id] = { signal, callbacks: [] };
+      }
+      callback && this.signals[signal.id].callbacks.push(callback);
+    }
+  };
+  var components_default = Component;
+
+  // src/blueprint.ts
+  var Blueprint = class {
+    callback;
+    current;
+    constructor(callback) {
+      this.callback = callback;
+      this.current = null;
+    }
+    build() {
+      this.current = new components_default(this.callback);
+      return this.current.name;
+    }
+    toString() {
+      return this.build();
+    }
+    get close() {
+      return this.current.name;
+    }
+  };
+
+  // src/utils/append.ts
+  function render(target, component) {
+    target.innerHTML = "";
+    target.appendChild(document.createElement(`${component}`));
+  }
+  return __toCommonJS(src_exports);
+})();
 //# sourceMappingURL=bundle.js.map

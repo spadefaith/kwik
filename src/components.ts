@@ -1,23 +1,37 @@
 import Custom from "./services/custom";
 import { generateId } from "./utils/rand";
-import createSignal from "./services/signal";
 import { getComments, stringToHTML } from "./utils/el";
 import ArrayWrapper from "./utils/array";
 import Lifecycle from "./services/lifecycle";
+import Signal from "./services/signal";
+import { loop } from "./utils/loop";
+import { COMPONENT_LIFECYCLE } from "./consts/component-lifecycle";
+export type AttributesItemType = {
+  signal: string;
+  name: string;
+};
+
+export type SignalItemType = {
+  [key: string]: {
+    signal: Signal;
+    callbacks?: ((a: any) => any)[];
+  };
+};
 
 const Component = class {
   name: string;
   id: string;
-  attributes: string[];
+  attributes: AttributesItemType[];
   template: any;
   callback: any;
   custom: any;
   componentCallback: any;
   componentDisconnectCallback: any;
-  signals: any;
+  signals: SignalItemType;
   styles: any;
   events: any;
   lifecycle: Lifecycle;
+  props: any;
   constructor(callback) {
     this.callback = callback;
     this.id = generateId();
@@ -35,29 +49,50 @@ const Component = class {
     this._createCustom();
   }
   _initLifecycle() {
-    this.lifecycle.rendered((el) => {
-      Object.keys(this.styles).forEach((id) => {
+    this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el) => {
+      loop(this.styles, (id) => {
         const styles = this.styles[id];
         const target: HTMLElement = document.querySelector(
           `[data-style=${id}]`
         );
 
         if (target) {
-          Object.keys(styles).forEach((key) => {
+          loop(styles, (key) => {
             target.style[key] = styles[key];
           });
         }
       });
     });
+    this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el) => {
+      loop(this.signals, (a) => {
+        const { signal, callbacks } = a;
+        if (callbacks.length) {
+          loop(callbacks, (callback) => {
+            callback && callback(signal.value);
+          });
+        }
+      });
+    });
 
-    this.lifecycle.change(({ name, oldValue, newValue }) => {
-      if (this.signals[name]) {
-        this.signals[name].forEach((signal) => {
+    this.lifecycle.on(
+      COMPONENT_LIFECYCLE.CHANGE,
+      ({ name, oldValue, newValue }) => {
+        const getSignalId = this.attributes.find((item) => item.name == name);
+        if (getSignalId) {
+          const conf = this.signals[getSignalId.signal];
           if (oldValue != newValue) {
-            signal.value = newValue;
+            conf.signal.value = newValue;
           }
-        });
+        }
       }
+    );
+
+    this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, () => {
+      this.attributes = [];
+      this.template = {};
+      this.signals = {};
+      this.styles = {};
+      this.events = [];
     });
   }
   _createTemplate() {
@@ -66,47 +101,69 @@ const Component = class {
       render: this._renderCallback.bind(this),
       attr: this._attrCallback.bind(this),
       events: this._eventsCallback.bind(this),
-      connectedCallback: this._connectedCallback.bind(this),
       props: this._propsCallback.bind(this),
       style: this._styleCallback.bind(this),
+      ref: this._refCallback.bind(this),
+      signal: (value) => {
+        return new Signal(value);
+      },
+      onConnected: this._connectedCallback.bind(this),
     });
 
     this.template = template;
   }
+  _refCallback(callback?) {
+    const id = generateId();
+
+    if (callback) {
+      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, () => {
+        const target: HTMLElement = document.querySelector(`[data-ref=${id}]`);
+        callback(target);
+      });
+    }
+
+    return {
+      get current() {
+        return document.querySelector(`[data-ref=${id}]`);
+      },
+      toString() {
+        return `data-ref=${id}`;
+      },
+    };
+  }
   _styleCallback(obj) {
     const id = generateId();
     this.styles[id] = obj;
-
-    Object.keys(obj).forEach((key) => {
+    loop(obj, (key) => {
       const value = obj[key];
 
       if (value.isSignal) {
-        this._registerSignal(key, value);
-
-        value.subscribe((v) => {
+        const callback = (v) => {
           const target: HTMLElement = document.querySelector(
             `[data-style=${id}]`
           );
           if (target) {
             target.style[key] = v;
           }
-        });
+        };
+        this._registerSignal(value, callback);
+
+        value.subscribe(callback);
       }
     });
     return `data-style=${id}`;
   }
   _propsCallback(name, initialValue) {
-    this.attributes.push(name);
+    const signal = new Signal(initialValue);
+    this.attributes.push({ signal: signal.id, name });
 
-    const signal = createSignal(initialValue);
-
-    this._registerSignal(name, signal);
+    this._registerSignal(signal);
 
     return signal;
   }
   _connectedCallback(callback) {
-    this.lifecycle.rendered(callback);
-    this.lifecycle.destroy(() => callback());
+    this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, callback);
+    this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, () => callback());
   }
   _eventsCallback(events) {
     return Object.keys(events)
@@ -126,14 +183,14 @@ const Component = class {
   }
   _attrCallback(attr, signal) {
     if (signal.isSignal) {
-      this._registerSignal(signal.id, signal);
+      this._registerSignal(signal);
       signal.subscribe((value) => {});
     }
 
     return `${attr}=${signal}`;
   }
   _nodeCallback(signal) {
-    this._registerSignal(signal.id, signal);
+    this._registerSignal(signal);
 
     signal.subscribe((value) => {
       const id = signal.id;
@@ -145,7 +202,7 @@ const Component = class {
           const node = getComments(self, `node ${id}`);
 
           if (node.length) {
-            node.forEach((n) => {
+            loop(node, (n) => {
               const next = n.nextSibling;
               if (next.nodeType == 3) {
                 if (next.nodeValue[0] == " ") {
@@ -172,7 +229,7 @@ const Component = class {
       opts.replace = templateIsString ? true : false;
     }
 
-    signal.subscribe((value) => {
+    const callback = (value) => {
       if (Array.isArray(value)) {
         value = new ArrayWrapper(value).data;
       }
@@ -183,7 +240,7 @@ const Component = class {
         setTimeout(() => {
           const node = getComments(self, `render ${id}`);
           if (node.length) {
-            node.forEach((n) => {
+            loop(node, (n) => {
               let r = null;
               if (templateIsString) {
                 if (opts.renderer) {
@@ -219,18 +276,22 @@ const Component = class {
           }
         });
       }
-    });
+    };
+
+    signal.subscribe(callback);
+    this._registerSignal(signal, callback);
 
     return `<!--render ${signal.id}-->`;
   }
   _createCustom() {
     this.custom = Custom(this, this.lifecycle);
   }
-  _registerSignal(name, signal) {
-    if (!this.signals[name]) {
-      this.signals[name] = [];
+  _registerSignal(signal, callback?) {
+    if (!this.signals[signal.id]) {
+      this.signals[signal.id] = { signal, callbacks: [] };
     }
-    this.signals[name].push(signal);
+
+    callback && this.signals[signal.id].callbacks.push(callback);
   }
 };
 

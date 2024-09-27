@@ -15,7 +15,7 @@ export default class Blueprint {
     return this.build();
   }
 
-  close() {
+  get close() {
     return this.current.name;
   }
 }

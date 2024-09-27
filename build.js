@@ -5,7 +5,7 @@ esbuild
     entryPoints: ["./src/index.ts"],
     bundle: true,
     platform: "browser",
-    minify: true,
+    minify: false,
     outfile: "./dist/bundle.js",
     sourcemap: true,
     globalName: "Kwik", // Replace with the desired global variable name
