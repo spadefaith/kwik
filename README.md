@@ -1,6 +1,7 @@
 # kwik
-Utilizing Web Component
 
+Component library that requires no build tools, It can be used directly
+in the browser. It is leveraging the Web Components.
 
 ```
 
