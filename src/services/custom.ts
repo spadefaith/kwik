@@ -1,10 +1,10 @@
 import JSXProcess from "./jsx";
 import { stringToHTML } from "../utils/el";
-import Lifecycle from "./lifecycle";
+import EventBus from "./event-bus";
 import { loop } from "../utils/loop";
 import { COMPONENT_LIFECYCLE } from "../consts/component-lifecycle";
 
-const Custom = (component, lifecycle: Lifecycle) => {
+const Custom = (component, lifecycle: EventBus) => {
   const id = component.id,
     name = component.name,
     attributes = component.attributes.map((item) => item.name),
@@ -35,6 +35,8 @@ const Custom = (component, lifecycle: Lifecycle) => {
           const { str, html } = vdom.toHtml();
 
           tempalateHtml = html;
+        } else {
+          tempalateHtml = template;
         }
 
         this._replaceSlot(initialInnerHtml, tempalateHtml);

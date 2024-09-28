@@ -2,10 +2,11 @@ import Custom from "./services/custom";
 import { generateId } from "./utils/rand";
 import { getComments, stringToHTML } from "./utils/el";
 import ArrayWrapper from "./utils/array";
-import Lifecycle from "./services/lifecycle";
+import EventBus from "./services/event-bus";
 import Signal from "./services/signal";
 import { loop } from "./utils/loop";
 import { COMPONENT_LIFECYCLE } from "./consts/component-lifecycle";
+import { exec } from "./utils/eval";
 export type AttributesItemType = {
   signal: string;
   name: string;
@@ -30,8 +31,9 @@ const Component = class {
   signals: SignalItemType;
   styles: any;
   events: any;
-  lifecycle: Lifecycle;
+  lifecycle: EventBus;
   props: any;
+
   constructor(callback) {
     this.callback = callback;
     this.id = generateId();
@@ -43,47 +45,44 @@ const Component = class {
     this.styles = {};
     this.events = [];
 
-    this.lifecycle = new Lifecycle();
+    this.lifecycle = new EventBus();
     this._initLifecycle();
     this._createTemplate();
     this._createCustom();
   }
   _initLifecycle() {
     this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el) => {
-      loop(this.styles, (id) => {
-        const styles = this.styles[id];
-        const target: HTMLElement = document.querySelector(
-          `[data-style=${id}]`
-        );
-
-        if (target) {
+      loop(this.styles, (styles, id) => {
+        exec(document.querySelector(`[data-style=${id}]`), (target) => {
           loop(styles, (key) => {
             target.style[key] = styles[key];
           });
-        }
+        });
       });
     });
     this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el) => {
       loop(this.signals, (a) => {
         const { signal, callbacks } = a;
-        if (callbacks.length) {
+        exec(callbacks.length, (length) => {
           loop(callbacks, (callback) => {
             callback && callback(signal.value);
           });
-        }
+        });
       });
     });
 
     this.lifecycle.on(
       COMPONENT_LIFECYCLE.CHANGE,
       ({ name, oldValue, newValue }) => {
-        const getSignalId = this.attributes.find((item) => item.name == name);
-        if (getSignalId) {
-          const conf = this.signals[getSignalId.signal];
-          if (oldValue != newValue) {
-            conf.signal.value = newValue;
+        exec(
+          this.attributes.find((item) => item.name == name),
+          (getSignalId) => {
+            const conf = this.signals[getSignalId?.signal];
+            if (oldValue != newValue) {
+              conf.signal.value = newValue;
+            }
           }
-        }
+        );
       }
     );
 
@@ -115,12 +114,12 @@ const Component = class {
   _refCallback(callback?) {
     const id = generateId();
 
-    if (callback) {
+    exec(callback, (callback) => {
       this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, () => {
         const target: HTMLElement = document.querySelector(`[data-ref=${id}]`);
         callback(target);
       });
-    }
+    });
 
     return {
       get current() {
@@ -137,7 +136,7 @@ const Component = class {
     loop(obj, (key) => {
       const value = obj[key];
 
-      if (value.isSignal) {
+      exec(value.isSignal, (isSignal) => {
         const callback = (v) => {
           const target: HTMLElement = document.querySelector(
             `[data-style=${id}]`
@@ -149,7 +148,7 @@ const Component = class {
         this._registerSignal(value, callback);
 
         value.subscribe(callback);
-      }
+      });
     });
     return `data-style=${id}`;
   }
@@ -166,27 +165,24 @@ const Component = class {
     this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, () => callback());
   }
   _eventsCallback(events) {
-    return Object.keys(events)
-      .map((key) => {
-        const handler = events[key];
-        const id = generateId();
+    let str = "";
+    loop(events, (handler, key) => {
+      const id = generateId();
+      this.events.push({
+        id,
+        type: key,
+        handler,
+      });
+      str += `data-event=${key}-${id} `;
+    });
 
-        this.events.push({
-          id,
-          type: key,
-          handler,
-        });
-
-        return `data-event=${key}-${id}`;
-      })
-      .join(" ");
+    return str;
   }
   _attrCallback(attr, signal) {
-    if (signal.isSignal) {
+    exec(signal.isSignal, (isSignal) => {
       this._registerSignal(signal);
       signal.subscribe((value) => {});
-    }
-
+    });
     return `${attr}=${signal}`;
   }
   _nodeCallback(signal) {
@@ -197,36 +193,38 @@ const Component = class {
 
       const self = document.querySelector(this.name);
 
-      if (self) {
-        setTimeout(() => {
-          const node = getComments(self, `node ${id}`);
-
-          if (node.length) {
-            loop(node, (n) => {
-              const next = n.nextSibling;
-              if (next.nodeType == 3) {
-                if (next.nodeValue[0] == " ") {
-                  next.nodeValue = ` ${signal}`;
-                } else {
-                  next.nodeValue = signal;
-                }
-              }
-            });
-          }
-
-          // console.log(50, id, node);
-        });
+      if (!self) {
+        return;
       }
+
+      setTimeout(() => {
+        const node = getComments(self, `node ${id}`);
+
+        if (!node.length) {
+          return;
+        }
+
+        loop(node, (n) => {
+          const next = n.nextSibling;
+
+          if (next.nodeType == 3) {
+            if (next.nodeValue[0] == " ") {
+              next.nodeValue = ` ${signal}`;
+            } else {
+              next.nodeValue = signal;
+            }
+          }
+        });
+      });
     });
 
     return `<!--node ${signal.id}--> ${signal}`;
   }
   _renderCallback(signal, template, opts: any = {}) {
-    const templateIsString = typeof template == "string";
-    const templateIsFunction = typeof template == "function";
+    const templateType = typeof template;
 
     if (opts.replace == undefined) {
-      opts.replace = templateIsString ? true : false;
+      opts.replace = templateType == "string" ? true : false;
     }
 
     const callback = (value) => {
@@ -236,50 +234,55 @@ const Component = class {
 
       const id = signal.id;
       const self = document.querySelector(this.name);
-      if (self) {
-        setTimeout(() => {
-          const node = getComments(self, `render ${id}`);
-          if (node.length) {
-            loop(node, (n) => {
-              let r = null;
-              if (templateIsString) {
-                if (opts.renderer) {
-                  r = opts.renderer.render(template, {
-                    list: value,
-                  });
-                } else {
-                  throw new Error("renderer is required");
-                }
-              } else if (templateIsFunction) {
-                r = template(value);
-              }
 
-              if (!n.isInitialized) {
-                n.isInitialized = true;
-              }
-
-              if (n.isInitialized) {
-                if (opts.replace) {
-                  const next = n.nextSibling;
-                  next.remove();
-                }
-              }
-
-              if (!r) {
-                return;
-              }
-
-              const rHtml = stringToHTML(r);
-
-              n.parentElement.insertBefore(rHtml.firstChild, n.nextSibling);
-            });
-          }
-        });
+      if (!self) {
+        return;
       }
+
+      const node = getComments(self, `render ${id}`);
+      if (!node.length) {
+        return;
+      }
+      loop(node, (n) => {
+        let r = null;
+
+        switch (templateType) {
+          case "string":
+            {
+              if (opts.renderer) {
+                r = opts.renderer.render(template, {
+                  list: value,
+                });
+              } else {
+                throw new Error("renderer is required");
+              }
+            }
+            break;
+          case "function":
+            {
+              r = template(value);
+            }
+            break;
+        }
+        if (!n.isInitialized) {
+          n.isInitialized = true;
+        }
+        if (n.isInitialized) {
+          if (opts.replace) {
+            const next = n.nextSibling;
+            next.remove();
+          }
+        }
+        if (!r) {
+          return;
+        }
+        const rHtml = stringToHTML(r);
+        n.parentElement.insertBefore(rHtml.firstChild, n.nextSibling);
+      });
     };
 
-    signal.subscribe(callback);
-    this._registerSignal(signal, callback);
+    signal.subscribe((value) => setTimeout(() => callback(value)));
+    this._registerSignal(signal, (value) => setTimeout(() => callback(value)));
 
     return `<!--render ${signal.id}-->`;
   }

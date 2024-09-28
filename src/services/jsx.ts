@@ -18,9 +18,6 @@ export default class JSXProcess {
     } else {
       this.jsx = ctx;
     }
-
-    this.events = [];
-    this.signals = [];
   }
 
   toHtml() {

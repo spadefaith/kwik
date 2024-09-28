@@ -1,20 +1,20 @@
 import { generateId } from "../utils/rand";
+import EventBus from "./event-bus";
 
 export default class Signal {
   id: string;
   _value: any;
   subscribers: any[];
+  pubsub: EventBus;
   constructor(initialValue) {
     this.id = generateId();
     this._value = initialValue;
     this.subscribers = [];
+    this.pubsub = new EventBus();
   }
   _notify() {
-    for (let subscriber of this.subscribers) {
-      subscriber(this._value);
-    }
+    this.pubsub.broadcast("signal", this._value);
   }
-
   get value() {
     return this._value;
   }
@@ -23,7 +23,7 @@ export default class Signal {
     this._notify();
   }
   subscribe(subscriber) {
-    this.subscribers.push(subscriber);
+    this.pubsub.on("signal", subscriber);
   }
 
   toString() {

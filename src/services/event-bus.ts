@@ -1,30 +1,9 @@
 import { loop } from "../utils/loop";
 
-export default class Lifecycle {
+export default class EventBus {
   subscriber: any;
   constructor() {
-    this.subscriber = {
-      destroy: [],
-      rendered: [],
-      change: [],
-      adopted: [],
-    };
-  }
-
-  destroy(callback) {
-    this.subscriber.destroy.push(callback);
-  }
-
-  rendered(callback) {
-    this.subscriber.rendered.push(callback);
-  }
-
-  change(callback) {
-    this.subscriber.change.push(callback);
-  }
-
-  adopted(callback) {
-    this.subscriber.adopted.push(callback);
+    this.subscriber = {};
   }
 
   on(event, callback) {
