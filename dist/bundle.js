@@ -281,11 +281,6 @@ var Kwik = (() => {
     }
   };
 
-  // src/utils/eval.ts
-  var exec = (ctx, callback) => {
-    ctx && callback(ctx);
-  };
-
   // src/components.ts
   var Component = class {
     name;
@@ -318,35 +313,33 @@ var Kwik = (() => {
     _initLifecycle() {
       this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el) => {
         loop(this.styles, (styles, id) => {
-          exec(document.querySelector(`[data-style=${id}]`), (target) => {
-            loop(styles, (key) => {
-              target.style[key] = styles[key];
-            });
+          const target = document.querySelector(
+            `[data-style=${id}]`
+          );
+          if (!target) return;
+          loop(styles, (key) => {
+            target.style[key] = styles[key];
           });
         });
       });
       this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el) => {
         loop(this.signals, (a) => {
           const { signal, callbacks } = a;
-          exec(callbacks.length, (length) => {
-            loop(callbacks, (callback) => {
-              callback && callback(signal.value);
-            });
+          if (!callbacks.length) return;
+          loop(callbacks, (callback) => {
+            callback && callback(signal.value);
           });
         });
       });
       this.lifecycle.on(
         COMPONENT_LIFECYCLE.CHANGE,
         ({ name, oldValue, newValue }) => {
-          exec(
-            this.attributes.find((item) => item.name == name),
-            (getSignalId) => {
-              const conf = this.signals[getSignalId?.signal];
-              if (oldValue != newValue) {
-                conf.signal.value = newValue;
-              }
-            }
-          );
+          const getSignalId = this.attributes.find((item) => item.name == name);
+          if (!getSignalId) return;
+          const conf = this.signals[getSignalId?.signal];
+          if (oldValue != newValue) {
+            conf.signal.value = newValue;
+          }
         }
       );
       this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, () => {
@@ -375,11 +368,10 @@ var Kwik = (() => {
     }
     _refCallback(callback) {
       const id = generateId();
-      exec(callback, (callback2) => {
-        this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, () => {
-          const target = document.querySelector(`[data-ref=${id}]`);
-          callback2(target);
-        });
+      if (!callback) return;
+      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, () => {
+        const target = document.querySelector(`[data-ref=${id}]`);
+        callback(target);
       });
       return {
         get current() {
@@ -395,18 +387,17 @@ var Kwik = (() => {
       this.styles[id] = obj;
       loop(obj, (key) => {
         const value = obj[key];
-        exec(value.isSignal, (isSignal) => {
-          const callback = (v) => {
-            const target = document.querySelector(
-              `[data-style=${id}]`
-            );
-            if (target) {
-              target.style[key] = v;
-            }
-          };
-          this._registerSignal(value, callback);
-          value.subscribe(callback);
-        });
+        if (!value.isSignal) return;
+        const callback = (v) => {
+          const target = document.querySelector(
+            `[data-style=${id}]`
+          );
+          if (target) {
+            target.style[key] = v;
+          }
+        };
+        this._registerSignal(value, callback);
+        value.subscribe(callback);
       });
       return `data-style=${id}`;
     }
@@ -434,10 +425,9 @@ var Kwik = (() => {
       return str;
     }
     _attrCallback(attr, signal) {
-      exec(signal.isSignal, (isSignal) => {
-        this._registerSignal(signal);
-        signal.subscribe((value) => {
-        });
+      if (!signal.isSignal) return;
+      this._registerSignal(signal);
+      signal.subscribe((value) => {
       });
       return `${attr}=${signal}`;
     }
