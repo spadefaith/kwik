@@ -8,6 +8,8 @@ const Custom = (component, lifecycle: EventBus) => {
   const id = component.id,
     name = component.name,
     attributes = component.attributes.map((item) => item.name),
+    extension: HTMLElement = component.extension || HTMLElement,
+    customType = component.customType,
     template = component.template;
 
   let vdom = new JSXProcess(component);
@@ -18,18 +20,17 @@ const Custom = (component, lifecycle: EventBus) => {
     return customElements.get(name);
   }
 
-  customElements.define(
-    name,
-    class extends HTMLElement {
+  const classFactory: any = (ext) => {
+    return class extends ext {
       static observedAttributes = [...attributes, "key"];
 
       constructor() {
         super();
-
         initialInnerHtml = stringToHTML(this.innerHTML);
 
-        this.innerHTML = "";
+        this._container();
       }
+
       connectedCallback() {
         if (typeof template == "function") {
           const { str, html } = vdom.toHtml();
@@ -41,8 +42,12 @@ const Custom = (component, lifecycle: EventBus) => {
 
         this._replaceSlot(initialInnerHtml, tempalateHtml);
 
-        loop(initialInnerHtml.childNodes, (child) => this.appendChild(child));
-        loop(tempalateHtml.childNodes, (child) => this.appendChild(child));
+        loop(initialInnerHtml.childNodes, (child) => {
+          this._container().appendChild(child);
+        });
+        loop(tempalateHtml.childNodes, (child) =>
+          this._container().appendChild(child)
+        );
 
         lifecycle.broadcast(COMPONENT_LIFECYCLE.RENDERED, this);
       }
@@ -60,23 +65,19 @@ const Custom = (component, lifecycle: EventBus) => {
           newValue,
         });
       }
-
       _replaceSlot(src, target) {
         const slots = src.querySelectorAll("[slot]");
-
         loop(slots, (slot, i) => {
           const slotName = slot.getAttribute("slot");
           const targetSlot = target.querySelector(`slot[name=${slotName}]`);
           if (targetSlot) {
             const attributes = targetSlot.attributes;
-
             loop(attributes, (attr) => {
               if (attr.name == "name") return;
               slot.setAttribute(attr.name, attr.value);
             });
 
             slot.removeAttribute("slot");
-
             targetSlot.replaceWith(slot);
           } else {
             slot.remove();
@@ -87,9 +88,28 @@ const Custom = (component, lifecycle: EventBus) => {
         */
         const targetSlots = target.querySelectorAll("slot[name]");
         loop(targetSlots, (slot, i) => slot.remove());
+
+        /**
+         * removing the slot; if replaceWith did not remove it
+         */
+        loop(this.childNodes, (child) => {
+          if (child.nodeType == 1 && child.getAttribute("slot")) {
+            child.remove();
+          }
+        });
       }
-    }
-  );
+      _container() {
+        if (["open", "closed"].includes(customType)) {
+          this.attachShadow({ mode: customType });
+          return this.shadowRoot;
+        } else {
+          return this;
+        }
+      }
+    };
+  };
+
+  customElements.define(name, classFactory(extension));
 
   return customElements.get(name);
 };
