@@ -55,6 +55,31 @@ var Kwik = (() => {
     return doc.body;
   };
 
+  // src/services/jsx.ts
+  var JSXProcess = class {
+    renderFunction;
+    component;
+    jsx;
+    events;
+    signals;
+    constructor(component) {
+      this.component = component;
+      const ctx = component.template;
+      this.renderFunction = null;
+      if (typeof ctx == "function") {
+        this.renderFunction = ctx;
+        this.jsx = ctx();
+      } else {
+        this.jsx = ctx;
+      }
+    }
+    toHtml() {
+      const str = this.jsx;
+      const html = stringToHTML(str);
+      return { str, html };
+    }
+  };
+
   // src/utils/loop.ts
   var loop = (array, callback) => {
     if (!array) return;
@@ -87,42 +112,6 @@ var Kwik = (() => {
     }
   };
 
-  // src/services/jsx.ts
-  var JSXProcess = class {
-    renderFunction;
-    component;
-    jsx;
-    events;
-    signals;
-    constructor(component) {
-      this.component = component;
-      const ctx = component.template;
-      this.renderFunction = null;
-      if (typeof ctx == "function") {
-        this.renderFunction = ctx;
-        this.jsx = ctx();
-      } else {
-        this.jsx = ctx;
-      }
-    }
-    toHtml() {
-      const str = this.jsx;
-      const html = stringToHTML(str);
-      loop(this.component.events, (event) => {
-        const { type, id, handler } = event;
-        const target = html.querySelector(
-          `[data-event=${type}-${id}]`
-        );
-        if (target) {
-          target.addEventListener(type, (e) => {
-            handler(e);
-          });
-        }
-      });
-      return { str, html };
-    }
-  };
-
   // src/consts/component-lifecycle.ts
   var RENDERED = "rendered";
   var DESTROY = "destroy";
@@ -132,21 +121,20 @@ var Kwik = (() => {
 
   // src/services/custom.ts
   var Custom = (component, lifecycle) => {
-    const id = component.id, name = component.name, attributes = component.attributes.map((item) => item.name), template = component.template;
+    const id = component.id, name = component.name, attributes = component.attributes.map((item) => item.name), extension = component.extension || HTMLElement, customType = component.customType, template = component.template;
     let vdom = new JSXProcess(component);
     let tempalateHtml = null;
     let initialInnerHtml = "";
     if (customElements.get(name)) {
       return customElements.get(name);
     }
-    customElements.define(
-      name,
-      class extends HTMLElement {
+    const classFactory = (ext) => {
+      return class extends ext {
         static observedAttributes = [...attributes, "key"];
         constructor() {
           super();
           initialInnerHtml = stringToHTML(this.innerHTML);
-          this.innerHTML = "";
+          this._container();
         }
         connectedCallback() {
           if (typeof template == "function") {
@@ -156,8 +144,13 @@ var Kwik = (() => {
             tempalateHtml = template;
           }
           this._replaceSlot(initialInnerHtml, tempalateHtml);
-          loop(initialInnerHtml.childNodes, (child) => this.appendChild(child));
-          loop(tempalateHtml.childNodes, (child) => this.appendChild(child));
+          loop(initialInnerHtml.childNodes, (child) => {
+            this._container().appendChild(child);
+          });
+          loop(
+            tempalateHtml.childNodes,
+            (child) => this._container().appendChild(child)
+          );
           lifecycle.broadcast(COMPONENT_LIFECYCLE.RENDERED, this);
         }
         disconnectedCallback() {
@@ -192,9 +185,23 @@ var Kwik = (() => {
           });
           const targetSlots = target.querySelectorAll("slot[name]");
           loop(targetSlots, (slot, i) => slot.remove());
+          loop(this.childNodes, (child) => {
+            if (child.nodeType == 1 && child.getAttribute("slot")) {
+              child.remove();
+            }
+          });
         }
-      }
-    );
+        _container() {
+          if (["open", "closed"].includes(customType)) {
+            this.attachShadow({ mode: customType });
+            return this.shadowRoot;
+          } else {
+            return this;
+          }
+        }
+      };
+    };
+    customElements.define(name, classFactory(extension));
     return customElements.get(name);
   };
   var custom_default = Custom;
@@ -202,21 +209,30 @@ var Kwik = (() => {
   // src/utils/rand.ts
   var generateId = () => `a${crypto.randomUUID().replaceAll("-", "")}a`;
 
-  // src/utils/array.ts
-  var ArrayWrapper = class {
-    constructor(array) {
-      this.array = array;
-      this.array = array;
+  // src/utils/data-wrapper.ts
+  var DataWrapper = class {
+    constructor(ctx) {
+      this.ctx = ctx;
+      this.ctx = ctx;
     }
     get data() {
-      if (Array.isArray(this.array)) {
-        return this;
-      } else {
-        return this.array;
+      return this.ctx;
+    }
+    get isEmpty() {
+      const type = typeof this.ctx;
+      if (!this.ctx) {
+        return true;
+      } else if (type === "object") {
+        return Object.keys(this.ctx).length === 0;
       }
+      return this.ctx.length == 0 || this.ctx.size == 0;
     }
     each(callback) {
-      return this.array.map(callback).join("");
+      let str = "";
+      loop(this.ctx, (value, key) => {
+        str += callback(value, key);
+      });
+      return str;
     }
   };
 
@@ -233,9 +249,21 @@ var Kwik = (() => {
       this.subscriber[event].push(callback);
     }
     broadcast(event, data) {
-      loop(this.subscriber[event], (callback) => {
-        callback(data);
-      });
+      const listeners = this.subscriber[event];
+      const length = listeners.length;
+      let index = 0;
+      const recur = (listeners2) => {
+        if (listeners2.length > index) {
+          let callback = listeners2[index];
+          callback(data, () => {
+            index++;
+            recur(listeners2);
+          });
+        }
+        if (listeners2.length - 1 == index) {
+        }
+      };
+      recur(listeners);
     }
     clean(event) {
       if (event) {
@@ -267,14 +295,42 @@ var Kwik = (() => {
       return this._value;
     }
     set value(v) {
+      const test = this._checkEquality(this._value, v);
+      if (test) {
+        return;
+      }
       this._value = v;
       this._notify();
     }
     subscribe(subscriber) {
-      this.pubsub.on("signal", subscriber);
+      this.pubsub.on("signal", (data, next) => {
+        subscriber(data);
+        next();
+      });
     }
     toString() {
       return this._value.toString();
+    }
+    _checkEquality(a, b) {
+      const typeA = typeof a;
+      const typeB = typeof b;
+      if (typeA !== typeB) return false;
+      if (typeA === "number" && typeB === "number") {
+        return a === b;
+      }
+      if (typeA === "string" && typeB === "string") {
+        return a === b;
+      }
+      if (typeA === "boolean" && typeB === "boolean") {
+        return a === b;
+      }
+      if (typeA === "undefined" && typeB === "undefined") {
+        return true;
+      }
+      if (typeA === null && typeB === null) {
+        return true;
+      }
+      return false;
     }
     get isSignal() {
       return true;
@@ -296,22 +352,75 @@ var Kwik = (() => {
     events;
     lifecycle;
     props;
-    constructor(callback) {
+    options;
+    refs;
+    extension;
+    customType;
+    constructor(callback, options = {}) {
       this.callback = callback;
       this.id = generateId();
       this.name = `x-${this.id}`;
+      this.extension = options.extension;
+      this.customType = options.type;
       this.attributes = [];
       this.template = {};
       this.signals = {};
       this.styles = {};
       this.events = [];
+      this.refs = {};
       this.lifecycle = new EventBus();
       this._initLifecycle();
       this._createTemplate();
       this._createCustom();
     }
     _initLifecycle() {
-      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el) => {
+      this.lifecycle.on(
+        COMPONENT_LIFECYCLE.CHANGE,
+        ({ name, oldValue, newValue }, next) => {
+          const getSignalId = this.attributes.find((item) => item.name == name);
+          if (!getSignalId) return;
+          const conf = this.signals[getSignalId?.signal];
+          if (oldValue != newValue) {
+            conf.signal.value = newValue;
+          }
+          next();
+        }
+      );
+      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
+        loop(this.signals, (a) => {
+          const { signal, callbacks } = a;
+          if (!callbacks.length) return;
+          loop(callbacks, (callback) => {
+            callback && callback(signal.value);
+          });
+        });
+        next();
+      });
+      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
+        setTimeout(() => {
+          loop(this.events, (event) => {
+            const { type, id, handler } = event;
+            const target = el.querySelector(
+              `[data-event=${type}-${id}]`
+            );
+            if (target) {
+              target.addEventListener(type, (e) => {
+                handler(e);
+              });
+            }
+          });
+        });
+        next();
+      });
+      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
+        loop(this.refs, (ref, key) => {
+          if (!ref.is_rendered) {
+            ref.callback(el);
+          }
+        });
+        next();
+      });
+      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
         loop(this.styles, (styles, id) => {
           const target = document.querySelector(
             `[data-style=${id}]`
@@ -321,33 +430,16 @@ var Kwik = (() => {
             target.style[key] = styles[key];
           });
         });
+        next();
       });
-      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el) => {
-        loop(this.signals, (a) => {
-          const { signal, callbacks } = a;
-          if (!callbacks.length) return;
-          loop(callbacks, (callback) => {
-            callback && callback(signal.value);
-          });
-        });
-      });
-      this.lifecycle.on(
-        COMPONENT_LIFECYCLE.CHANGE,
-        ({ name, oldValue, newValue }) => {
-          const getSignalId = this.attributes.find((item) => item.name == name);
-          if (!getSignalId) return;
-          const conf = this.signals[getSignalId?.signal];
-          if (oldValue != newValue) {
-            conf.signal.value = newValue;
-          }
-        }
-      );
-      this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, () => {
+      this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, (el, next) => {
         this.attributes = [];
         this.template = {};
         this.signals = {};
         this.styles = {};
         this.events = [];
+        this.refs = {};
+        next();
       });
     }
     _createTemplate() {
@@ -365,22 +457,6 @@ var Kwik = (() => {
         onConnected: this._connectedCallback.bind(this)
       });
       this.template = template;
-    }
-    _refCallback(callback) {
-      const id = generateId();
-      if (!callback) return;
-      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, () => {
-        const target = document.querySelector(`[data-ref=${id}]`);
-        callback(target);
-      });
-      return {
-        get current() {
-          return document.querySelector(`[data-ref=${id}]`);
-        },
-        toString() {
-          return `data-ref=${id}`;
-        }
-      };
     }
     _styleCallback(obj) {
       const id = generateId();
@@ -408,8 +484,46 @@ var Kwik = (() => {
       return signal;
     }
     _connectedCallback(callback) {
-      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, callback);
-      this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, () => callback());
+      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
+        callback(el);
+        next();
+      });
+      this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, (el, next) => () => {
+        callback(el);
+        next();
+      });
+    }
+    _refCallback(callback) {
+      const id = generateId();
+      if (callback) {
+        const cb = (self) => {
+          setTimeout(() => {
+            const target = self.querySelector(`[data-ref=${id}]`);
+            if (target) {
+              this.refs[id].is_rendered = true;
+            }
+            callback(target);
+          });
+        };
+        this.refs[id] = {
+          callback: cb,
+          is_rendered: false
+        };
+      }
+      const $this = this;
+      return {
+        get current() {
+          const self = document.querySelector($this.name);
+          if (!self) {
+            return null;
+          }
+          const target = self.querySelector(`[data-ref=${id}]`);
+          return target;
+        },
+        toString() {
+          return `data-ref=${id}`;
+        }
+      };
     }
     _eventsCallback(events) {
       let str = "";
@@ -426,10 +540,15 @@ var Kwik = (() => {
     }
     _attrCallback(attr, signal) {
       if (!signal.isSignal) return;
-      this._registerSignal(signal);
-      signal.subscribe((value) => {
+      this._registerSignal(signal, () => {
       });
       return `${attr}=${signal}`;
+    }
+    _attrDataCallback(attr, signal) {
+      if (!signal.isSignal) return;
+      this._registerSignal(signal, () => {
+      });
+      return `data-${attr}=${signal}`;
     }
     _nodeCallback(signal) {
       this._registerSignal(signal);
@@ -460,13 +579,14 @@ var Kwik = (() => {
     }
     _renderCallback(signal, template, opts = {}) {
       const templateType = typeof template;
+      if (!signal?.isSignal) {
+        signal = new Signal(signal);
+      }
       if (opts.replace == void 0) {
         opts.replace = templateType == "string" ? true : false;
       }
       const callback = (value) => {
-        if (Array.isArray(value)) {
-          value = new ArrayWrapper(value).data;
-        }
+        value = new DataWrapper(value);
         const id = signal.id;
         const self = document.querySelector(this.name);
         if (!self) {
@@ -477,24 +597,11 @@ var Kwik = (() => {
           return;
         }
         loop(node, (n) => {
-          let r = null;
-          switch (templateType) {
-            case "string":
-              {
-                if (opts.renderer) {
-                  r = opts.renderer.render(template, {
-                    list: value
-                  });
-                } else {
-                  throw new Error("renderer is required");
-                }
-              }
-              break;
-            case "function":
-              {
-                r = template(value);
-              }
-              break;
+          let r = template(value);
+          if (opts.renderer) {
+            r = opts.renderer.render(r, {
+              list: value
+            });
           }
           if (!n.isInitialized) {
             n.isInitialized = true;
@@ -532,15 +639,19 @@ var Kwik = (() => {
   var Blueprint = class {
     callback;
     current;
-    /**
-     * @param {(params: ParamsType) => void} callback - The callback function that accepts an object with methods `node`, `attr`, and `signal`.
-     */
-    constructor(callback) {
+    extension;
+    customType;
+    constructor(callback, options = {}) {
       this.callback = callback;
       this.current = null;
+      this.extension = options.extension;
+      this.customType = options.type;
     }
     build() {
-      this.current = new components_default(this.callback);
+      this.current = new components_default(this.callback, {
+        extension: this.extension,
+        type: this.customType
+      });
       return this.current.name;
     }
     toString() {
@@ -558,4 +669,4 @@ var Kwik = (() => {
   }
   return __toCommonJS(src_exports);
 })();
-//# sourceMappingURL=bundle.js.map
+//# sourceMappingURL=index.iife.js.map
