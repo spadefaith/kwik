@@ -19,15 +19,50 @@ export default class Signal {
     return this._value;
   }
   set value(v) {
+    const test = this._checkEquality(this._value, v);
+    if (test) {
+      return;
+    }
     this._value = v;
     this._notify();
   }
   subscribe(subscriber) {
-    this.pubsub.on("signal", subscriber);
+    this.pubsub.on("signal", (data, next) => {
+      subscriber(data);
+      next();
+    });
   }
 
   toString() {
     return this._value.toString();
+  }
+
+  _checkEquality(a, b) {
+    const typeA = typeof a;
+    const typeB = typeof b;
+
+    if (typeA !== typeB) return false;
+
+    if (typeA === "number" && typeB === "number") {
+      return a === b;
+    }
+
+    if (typeA === "string" && typeB === "string") {
+      return a === b;
+    }
+    if (typeA === "boolean" && typeB === "boolean") {
+      return a === b;
+    }
+
+    if (typeA === "undefined" && typeB === "undefined") {
+      return true;
+    }
+
+    if (typeA === null && typeB === null) {
+      return true;
+    }
+
+    return false;
   }
 
   get isSignal() {
