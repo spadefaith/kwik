@@ -15,9 +15,21 @@ export default class EventBus {
   }
 
   broadcast(event, data) {
-    loop(this.subscriber[event], (callback) => {
-      callback(data);
-    });
+    const listeners = this.subscriber[event];
+    let index = 0;
+    const recur = (listeners) => {
+      if (listeners.length > index) {
+        let callback = listeners[index];
+        callback(data, () => {
+          index++;
+          recur(listeners);
+        });
+      }
+      if (listeners.length - 1 == index) {
+      }
+    };
+
+    recur(listeners);
   }
 
   clean(event) {
