@@ -1,22 +1,26 @@
-import Component from "./components";
+import Component, { CallbackParameterType } from "./components";
 
-type ParamsType = {
-  node: (str) => any;
-  attr: (str) => any;
-  signal: (any) => any;
-};
 export default class Blueprint {
   callback: any;
   current: any;
-  /**
-   * @param {(params: ParamsType) => void} callback - The callback function that accepts an object with methods `node`, `attr`, and `signal`.
-   */
-  constructor(callback) {
+  extension: HTMLElement;
+  customType: "open" | "closed" | null;
+
+  constructor(
+    callback: (params: CallbackParameterType) => void,
+    options = {} as any
+  ) {
     this.callback = callback;
     this.current = null;
+
+    this.extension = options.extension;
+    this.customType = options.type;
   }
   build() {
-    this.current = new Component(this.callback);
+    this.current = new Component(this.callback, {
+      extension: this.extension,
+      type: this.customType,
+    });
     return this.current.name;
   }
   toString() {
