@@ -22,19 +22,8 @@ export default class JSXProcess {
 
   toHtml() {
     const str = this.jsx;
-    const html = stringToHTML(str);
 
-    loop(this.component.events, (event) => {
-      const { type, id, handler } = event;
-      const target: HTMLElement = html.querySelector(
-        `[data-event=${type}-${id}]`
-      );
-      if (target) {
-        target.addEventListener(type, (e) => {
-          handler(e);
-        });
-      }
-    });
+    const html = stringToHTML(str);
 
     return { str, html };
   }
