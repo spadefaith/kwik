@@ -15,7 +15,7 @@ export default class EventBus {
   }
 
   broadcast(event, data) {
-    const listeners = this.subscriber[event];
+    const listeners = this.subscriber[event] || [];
     let index = 0;
     const recur = (listeners) => {
       if (listeners.length > index) {
@@ -32,7 +32,7 @@ export default class EventBus {
     recur(listeners);
   }
 
-  clean(event) {
+  clean(event?) {
     if (event) {
       this.subscriber[event] && (this.subscriber[event] = []);
     } else {
