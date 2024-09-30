@@ -34,7 +34,11 @@ export default class Signal {
   }
 
   toString() {
-    return this._value.toString();
+    try {
+      return this._value?.toString();
+    } catch (e) {
+      return String(this._value);
+    }
   }
 
   _checkEquality(a, b) {
