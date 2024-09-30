@@ -7,8 +7,11 @@ import Signal from "./services/signal";
 import { loop } from "./utils/loop";
 import { COMPONENT_LIFECYCLE } from "./consts/component-lifecycle";
 export type AttributesItemType = {
-  signal: string;
-  name: string;
+  [key: string]: {
+    signal_id: string;
+    name: string;
+    callbacks?: (a: any) => any;
+  };
 };
 
 export type SignalItemType = {
@@ -20,12 +23,12 @@ export type SignalItemType = {
 
 export type CallbackParameterType = {
   node: (signal: Signal) => string;
-  render: (signal: Signal, template: any, opts?: any) => any;
-  attr: (attr: string, signal: Signal) => any;
-  events: (events: any) => any;
-  props: (name: string, initialValue: any) => any;
+  render: (signal: Signal, template: any, opts?: any) => string;
+  attr: (attr: string, signal: Signal) => string;
+  events: (events: any) => string;
+  props: (name: string, initialValue: any) => Signal;
   style: (obj: any) => any;
-  ref: (callback?: (el: HTMLElement) => any) => any;
+  ref: (callback?: (el: HTMLElement) => any) => Signal;
   signal: (value: any) => Signal;
   onConnected: (callback: () => any) => any;
 };
@@ -33,7 +36,7 @@ export type CallbackParameterType = {
 const Component = class {
   name: string;
   id: string;
-  attributes: AttributesItemType[];
+  attributes: object;
   template: any;
   callback: any;
   custom: any;
@@ -58,7 +61,7 @@ const Component = class {
     this.extension = options.extension;
     this.customType = options.type;
 
-    this.attributes = [];
+    this.attributes = {};
     this.template = {};
     this.signals = {};
     this.styles = {};
@@ -74,12 +77,16 @@ const Component = class {
     this.lifecycle.on(
       COMPONENT_LIFECYCLE.CHANGE,
       ({ name, oldValue, newValue }, next) => {
-        const getSignalId = this.attributes.find((item) => item.name == name);
-        if (!getSignalId) return;
+        const attrConf = this.attributes[name] || {};
+        const signalId = attrConf.signal_id;
+        if (!signalId) return;
+        const { signal } = this.signals[signalId] || {};
+        if (signal) {
+          signal.value = newValue;
+        }
 
-        const conf = this.signals[getSignalId?.signal];
         if (oldValue != newValue) {
-          conf.signal.value = newValue;
+          attrConf?.callbacks?.map((callback) => callback(newValue));
         }
 
         next();
@@ -101,7 +108,6 @@ const Component = class {
     this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
       setTimeout(() => {
         loop(this.events, (event) => {
-          // console.log(104, event);
           const { type, id, handler } = event;
           const target: HTMLElement = el.querySelector(
             `[data-event=${type}-${id}]`
@@ -193,9 +199,8 @@ const Component = class {
   }
   _propsCallback(name, initialValue) {
     const signal = new Signal(initialValue);
-    this.attributes.push({ signal: signal.id, name });
 
-    this._registerSignal(signal);
+    this.attributes[name] = { signal_id: signal.id, name };
 
     return signal;
   }
@@ -259,16 +264,41 @@ const Component = class {
 
     return str;
   }
-  _attrCallback(attr, signal) {
-    if (!signal.isSignal) return;
-    this._registerSignal(signal, () => {});
-    return `${attr}=${signal}`;
-  }
-  _attrDataCallback(attr, signal) {
-    if (!signal.isSignal) return;
-    this._registerSignal(signal, () => {});
+  _attrCallback(attr, ctx) {
+    if (!ctx.isSignal) return;
+    const sel = `data-${attr}=${ctx.id}`;
+    // this._registerSignal(ctx, () => {});
 
-    return `data-${attr}=${signal}`;
+    let callback = (value) => {
+      setTimeout(() => {
+        const targets: NodeListOf<Element> = document.querySelectorAll(
+          `[${sel}]`
+        );
+        loop(targets, (target) => {
+          target.setAttribute(attr, value);
+        });
+      });
+    };
+
+    const keys = Object.keys(this.attributes);
+    for (let i = 0; i < keys.length; i++) {
+      const conf = this.attributes[keys[i]];
+      const { signal_id } = conf;
+      if (ctx.id == signal_id) {
+        if (!conf.callbacks) {
+          conf.callbacks = [];
+        }
+
+        conf.callbacks.push(callback);
+        break;
+      }
+    }
+
+    if (callback) {
+      this._registerSignal(ctx, callback);
+    }
+
+    return sel;
   }
   _nodeCallback(signal: Signal) {
     this._registerSignal(signal);

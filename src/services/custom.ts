@@ -7,7 +7,7 @@ import { COMPONENT_LIFECYCLE } from "../consts/component-lifecycle";
 const Custom = (component, lifecycle: EventBus) => {
   const id = component.id,
     name = component.name,
-    attributes = component.attributes.map((item) => item.name),
+    attributes = [...new Set(Object.keys(component.attributes))],
     extension: HTMLElement = component.extension || HTMLElement,
     customType = component.customType,
     template = component.template;
