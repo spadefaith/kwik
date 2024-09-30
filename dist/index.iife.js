@@ -113,15 +113,22 @@ var Kwik = (() => {
   };
 
   // src/consts/component-lifecycle.ts
+  var BEFORE_RENDERED = "before_rendered";
   var RENDERED = "rendered";
   var DESTROY = "destroy";
   var CHANGE = "change";
   var ADOPTED = "adopted";
-  var COMPONENT_LIFECYCLE = { RENDERED, DESTROY, CHANGE, ADOPTED };
+  var COMPONENT_LIFECYCLE = {
+    BEFORE_RENDERED,
+    RENDERED,
+    DESTROY,
+    CHANGE,
+    ADOPTED
+  };
 
   // src/services/custom.ts
   var Custom = (component, lifecycle) => {
-    const id = component.id, name = component.name, attributes = component.attributes.map((item) => item.name), extension = component.extension || HTMLElement, customType = component.customType, template = component.template;
+    const id = component.id, name = component.name, attributes = [...new Set(Object.keys(component.attributes))], extension = component.extension || HTMLElement, customType = component.customType, template = component.template;
     let vdom = new JSXProcess(component);
     let tempalateHtml = null;
     let initialInnerHtml = "";
@@ -249,8 +256,8 @@ var Kwik = (() => {
       this.subscriber[event].push(callback);
     }
     broadcast(event, data) {
-      const listeners = this.subscriber[event];
-      const length = listeners.length;
+      const listeners = this.subscriber[event] || [];
+      if (!listeners?.length) return;
       let index = 0;
       const recur = (listeners2) => {
         if (listeners2.length > index) {
@@ -309,7 +316,11 @@ var Kwik = (() => {
       });
     }
     toString() {
-      return this._value.toString();
+      try {
+        return this._value?.toString();
+      } catch (e) {
+        return String(this._value);
+      }
     }
     _checkEquality(a, b) {
       const typeA = typeof a;
@@ -362,7 +373,7 @@ var Kwik = (() => {
       this.name = `x-${this.id}`;
       this.extension = options.extension;
       this.customType = options.type;
-      this.attributes = [];
+      this.attributes = {};
       this.template = {};
       this.signals = {};
       this.styles = {};
@@ -377,11 +388,15 @@ var Kwik = (() => {
       this.lifecycle.on(
         COMPONENT_LIFECYCLE.CHANGE,
         ({ name, oldValue, newValue }, next) => {
-          const getSignalId = this.attributes.find((item) => item.name == name);
-          if (!getSignalId) return;
-          const conf = this.signals[getSignalId?.signal];
+          const attrConf = this.attributes[name] || {};
+          const signalId = attrConf.signal_id;
+          if (!signalId) return;
+          const { signal } = this.signals[signalId] || {};
+          if (signal) {
+            signal.value = newValue;
+          }
           if (oldValue != newValue) {
-            conf.signal.value = newValue;
+            attrConf?.callbacks?.map((callback) => callback(newValue));
           }
           next();
         }
@@ -479,8 +494,7 @@ var Kwik = (() => {
     }
     _propsCallback(name, initialValue) {
       const signal = new Signal(initialValue);
-      this.attributes.push({ signal: signal.id, name });
-      this._registerSignal(signal);
+      this.attributes[name] = { signal_id: signal.id, name };
       return signal;
     }
     _connectedCallback(callback) {
@@ -538,17 +552,35 @@ var Kwik = (() => {
       });
       return str;
     }
-    _attrCallback(attr, signal) {
-      if (!signal.isSignal) return;
-      this._registerSignal(signal, () => {
-      });
-      return `${attr}=${signal}`;
-    }
-    _attrDataCallback(attr, signal) {
-      if (!signal.isSignal) return;
-      this._registerSignal(signal, () => {
-      });
-      return `data-${attr}=${signal}`;
+    _attrCallback(attr, ctx) {
+      if (!ctx.isSignal) return;
+      const sel = `data-${attr}=${ctx.id}`;
+      let callback = (value) => {
+        setTimeout(() => {
+          const targets = document.querySelectorAll(
+            `[${sel}]`
+          );
+          loop(targets, (target) => {
+            target.setAttribute(attr, value);
+          });
+        });
+      };
+      const keys = Object.keys(this.attributes);
+      for (let i = 0; i < keys.length; i++) {
+        const conf = this.attributes[keys[i]];
+        const { signal_id } = conf;
+        if (ctx.id == signal_id) {
+          if (!conf.callbacks) {
+            conf.callbacks = [];
+          }
+          conf.callbacks.push(callback);
+          break;
+        }
+      }
+      if (callback) {
+        this._registerSignal(ctx, callback);
+      }
+      return sel;
     }
     _nodeCallback(signal) {
       this._registerSignal(signal);

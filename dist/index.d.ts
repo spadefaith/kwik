@@ -19,8 +19,11 @@ declare module "kwikjs/components" {
   import EventBus from "kwikjs/services/event-bus";
   import Signal from "kwikjs/services/signal";
   export type AttributesItemType = {
-    signal: string;
-    name: string;
+    [key: string]: {
+      signal_id: string;
+      name: string;
+      callbacks?: (a: any) => any;
+    };
   };
   export type SignalItemType = {
     [key: string]: {
@@ -30,12 +33,12 @@ declare module "kwikjs/components" {
   };
   export type CallbackParameterType = {
     node: (signal: Signal) => string;
-    render: (signal: Signal, template: any, opts?: any) => any;
-    attr: (attr: string, signal: Signal) => any;
-    events: (events: any) => any;
-    props: (name: string, initialValue: any) => any;
+    render: (signal: Signal, template: any, opts?: any) => string;
+    attr: (attr: string, signal: Signal) => string;
+    events: (events: any) => string;
+    props: (name: string, initialValue: any) => Signal;
     style: (obj: any) => any;
-    ref: (callback?: (el: HTMLElement) => any) => any;
+    ref: (callback?: (el: HTMLElement) => any) => Signal;
     signal: (value: any) => Signal;
     onConnected: (callback: () => any) => any;
   };
@@ -43,7 +46,7 @@ declare module "kwikjs/components" {
     new (callback: (params: CallbackParameterType) => any, options?: any): {
       name: string;
       id: string;
-      attributes: AttributesItemType[];
+      attributes: object;
       template: any;
       callback: any;
       custom: any;
@@ -68,8 +71,7 @@ declare module "kwikjs/components" {
         toString(): string;
       };
       _eventsCallback(events: any): string;
-      _attrCallback(attr: any, signal: any): string;
-      _attrDataCallback(attr: any, signal: any): string;
+      _attrCallback(attr: any, ctx: any): string;
       _nodeCallback(signal: Signal): string;
       _renderCallback(
         signal: any,
@@ -83,11 +85,13 @@ declare module "kwikjs/components" {
   export default Component;
 }
 declare module "kwikjs/consts/component-lifecycle" {
+  export const BEFORE_RENDERED = "before_rendered";
   export const RENDERED = "rendered";
   export const DESTROY = "destroy";
   export const CHANGE = "change";
   export const ADOPTED = "adopted";
   export const COMPONENT_LIFECYCLE: {
+    BEFORE_RENDERED: string;
     RENDERED: string;
     DESTROY: string;
     CHANGE: string;
@@ -116,7 +120,7 @@ declare module "kwikjs/services/event-bus" {
     constructor();
     on(event: any, callback: any): void;
     broadcast(event: any, data: any): void;
-    clean(event: any): void;
+    clean(event?: any): void;
   }
 }
 declare module "kwikjs/services/jsx" {
