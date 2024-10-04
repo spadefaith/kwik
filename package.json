@@ -10,11 +10,21 @@
     "name": "spadefaith",
     "email": "cedrickcampoto@yahoo.com"
   },
+  "repository": {
+    "url": "https://github.com/spadefaith/kwik.git",
+    "type": "public"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "node build.js"
   },
-  "keywords": [],
+  "keywords": [
+    "component",
+    "lit element",
+    "html",
+    "web components",
+    "vanilla js"
+  ],
   "license": "ISC",
   "dependencies": {
     "@types/jest": "^29.5.13",
