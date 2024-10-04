@@ -1,4 +1,4 @@
-import Component from "./components";
+import Component from "./component";
 import Signal from "./services/signal";
 import Blueprint from "./blueprint";
 import render from "./utils/append";

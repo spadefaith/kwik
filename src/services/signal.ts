@@ -9,7 +9,6 @@ export default class Signal {
   constructor(initialValue) {
     this.id = generateId();
     this._value = initialValue;
-    this.subscribers = [];
     this.pubsub = new EventBus();
   }
   _notify() {

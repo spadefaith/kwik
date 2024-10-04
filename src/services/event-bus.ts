@@ -36,9 +36,12 @@ export default class EventBus {
     if (event) {
       this.subscriber[event] && (this.subscriber[event] = []);
     } else {
-      loop(this.subscriber, (event) => {
-        this.subscriber[event] = [];
+      loop(this.subscriber, (value, key) => {
+        this.subscriber[key] = [];
       });
     }
+  }
+  toString() {
+    return "";
   }
 }
