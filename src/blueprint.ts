@@ -46,7 +46,7 @@ export default class Blueprint {
    */
   build() {
     this.current = new Component(this.callback, this.options);
-    return this.current.name;
+    return this.current;
   }
   /**
    * Converts the current object to a string representation.
@@ -54,7 +54,8 @@ export default class Blueprint {
    * @returns {string} The string representation of the current object.
    */
   toString() {
-    return this.build();
+    this.build();
+    return this.current.name;
   }
 
   /**
