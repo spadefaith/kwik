@@ -8,11 +8,14 @@ class ComponentCustom extends ComponentBase {
   replaced: any;
   timeout: number;
   renderCount: number;
+  webComponentInstance: WeakMap<any, any>;
   constructor(callback, options = {} as any) {
     super(callback, options);
     this.callback = callback;
     this.replaced = {};
     this.renderCount = 0;
+
+    this.webComponentInstance = new WeakMap();
   }
 
   /**
@@ -59,6 +62,7 @@ class ComponentCustom extends ComponentBase {
           clearTimeout(self.timeout);
           await new Promise(async (res: any, rej) => {
             self.timeout = setTimeout(() => {
+              self.webComponentInstance.set(this, this);
               self
                 ._connectedCallback(this, this._container())
                 .then(res())
@@ -70,6 +74,7 @@ class ComponentCustom extends ComponentBase {
           self._disconnectedCallback(this);
         }
         adoptedCallback() {
+          self.webComponentInstance.set(this, this);
           self._adoptedCallback(this);
         }
         attributeChangedCallback(name, oldValue, newValue) {
@@ -110,7 +115,10 @@ class ComponentCustom extends ComponentBase {
    * @param self - The instance of the component that is being disconnected.
    */
   _disconnectedCallback(self) {
-    this.lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, self);
+    this.webComponentInstance.has(self) &&
+      this.webComponentInstance.delete(self);
+
+    this.lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, null);
   }
   /**
    * Callback method that is invoked when an attribute of the custom element is added, removed, or changed.
