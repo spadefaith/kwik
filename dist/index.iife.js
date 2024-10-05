@@ -152,6 +152,35 @@ var Kwik = (() => {
   };
 
   // src/components-base.ts
+  var _GlobalEventBus = class {
+    subscriber;
+    constructor() {
+      this.subscriber = {};
+    }
+    on(component, event, callback) {
+      if (!this.subscriber[component]) {
+        this.subscriber[component] = new EventBus();
+      }
+      this.subscriber[component].on(event, callback);
+    }
+    broadcast(component, event, data) {
+      this.subscriber[component].broadcast(event, data);
+    }
+    clean(name) {
+      if (name) {
+        const g = this.subscriber[name];
+        if (g) {
+          g.clean();
+        }
+      } else {
+        Object.keys(this.subscriber).forEach((key) => {
+          this.subscriber[key].clean();
+        });
+      }
+    }
+  };
+  var GlobalEventBus = new _GlobalEventBus();
+  var GlobalHandlers = {};
   var ComponentBase = class {
     name;
     id;
@@ -165,6 +194,9 @@ var Kwik = (() => {
     options;
     refs;
     attributeChangePayload;
+    globalEventBus;
+    globalHandlers;
+    destroyTimeout;
     /**
      * Creates an instance of the component with the specified callback and options.
      *
@@ -195,6 +227,8 @@ var Kwik = (() => {
       this.refs = {};
       this.attributeChangePayload = {};
       this.lifecycle = new EventBus();
+      this.globalEventBus = GlobalEventBus;
+      this.globalHandlers = GlobalHandlers;
     }
     /**
      * Initializes the lifecycle events for the component.
@@ -231,6 +265,10 @@ var Kwik = (() => {
           next();
         }
       );
+      this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
+        clearTimeout(this.destroyTimeout);
+        next();
+      });
       this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
         loop(this.signals, (a) => {
           const { signal, callbacks } = a;
@@ -294,7 +332,14 @@ var Kwik = (() => {
         this.signals = {};
         this.styles = {};
         this.eventsStore = [];
-        this.refs = {};
+        clearTimeout(this.destroyTimeout);
+        this.destroyTimeout = setTimeout(() => {
+          this.attributes = {};
+          this.lifecycle.clean();
+          this.refs = {};
+          this.globalHandlers = {};
+          this.globalEventBus.clean(this.name);
+        }, 2e3);
         next();
       });
     }
@@ -376,11 +421,13 @@ var Kwik = (() => {
     replaced;
     timeout;
     renderCount;
+    webComponentInstance;
     constructor(callback, options = {}) {
       super(callback, options);
       this.callback = callback;
       this.replaced = {};
       this.renderCount = 0;
+      this.webComponentInstance = /* @__PURE__ */ new WeakMap();
     }
     /**
      * Creates a custom HTML element based on the provided configuration.
@@ -409,6 +456,7 @@ var Kwik = (() => {
           clearTimeout(self.timeout);
           await new Promise(async (res, rej) => {
             self.timeout = setTimeout(() => {
+              self.webComponentInstance.set(this, this);
               self._connectedCallback(this, this._container()).then(res()).catch((err) => rej(err));
             }, 50);
           });
@@ -417,6 +465,7 @@ var Kwik = (() => {
           self._disconnectedCallback(this);
         }
         adoptedCallback() {
+          self.webComponentInstance.set(this, this);
           self._adoptedCallback(this);
         }
         attributeChangedCallback(name, oldValue, newValue) {
@@ -454,7 +503,10 @@ var Kwik = (() => {
      * @param self - The instance of the component that is being disconnected.
      */
     _disconnectedCallback(self) {
-      this.lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, self);
+      console.log(118, this.webComponentInstance.get(self));
+      this.webComponentInstance.delete(self);
+      console.log(119, this.webComponentInstance.has(self));
+      this.lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, null);
     }
     /**
      * Callback method that is invoked when an attribute of the custom element is added, removed, or changed.
@@ -693,22 +745,6 @@ var Kwik = (() => {
   };
 
   // src/component.ts
-  var _GlobalEventBus = class {
-    subscriber;
-    constructor() {
-      this.subscriber = {};
-    }
-    on(component, event, callback) {
-      if (!this.subscriber[component]) {
-        this.subscriber[component] = new EventBus();
-      }
-      this.subscriber[component].on(event, callback);
-    }
-    broadcast(component, event, data) {
-      this.subscriber[component].broadcast(event, data);
-    }
-  };
-  var GlobalEventBus = new _GlobalEventBus();
   var Component = class extends component_custom_default {
     constructor(callback, options) {
       super(callback, options);
@@ -724,7 +760,8 @@ var Kwik = (() => {
         signal: this.signal.bind(this),
         onConnected: this.onConnected.bind(this),
         sub: this.sub.bind(this),
-        pub: this.pub.bind(this)
+        pub: this.pub.bind(this),
+        handler: this.handler.bind(this)
       });
       this.template = template;
       this._initLifecycle();
@@ -913,6 +950,7 @@ var Kwik = (() => {
           is_rendered: false
         };
       }
+      console.log(283, this.refs);
       const $this = this;
       return {
         get current() {
@@ -932,13 +970,48 @@ var Kwik = (() => {
       return new Signal(value);
     }
     onConnected(callback) {
+      if (typeof callback !== "function") return;
+      const getType = (callback2) => callback2.constructor.name;
+      const assignDisconnect = (callback2) => {
+        this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, (el, next) => {
+          switch (getType(callback2)) {
+            case "AsyncFunction": {
+              callback2(el).then(next).catch((err) => {
+                console.error(err);
+                next();
+              });
+              return;
+            }
+            case "Function": {
+              callback2(el);
+              next();
+              return;
+            }
+            default: {
+              next();
+            }
+          }
+        });
+      };
       this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
-        callback(el);
-        next();
-      });
-      this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, (el, next) => () => {
-        callback(el);
-        next();
+        switch (getType(callback)) {
+          case "AsyncFunction": {
+            callback(el).then((disconnectCallback) => {
+              if (typeof disconnectCallback !== "function") return next();
+              assignDisconnect(disconnectCallback);
+            });
+            return;
+          }
+          case "Function": {
+            const disconnectCallback = callback(el);
+            if (typeof disconnectCallback !== "function") return next();
+            assignDisconnect(disconnectCallback);
+            break;
+          }
+          default: {
+            next();
+          }
+        }
       });
     }
     /**
@@ -949,7 +1022,7 @@ var Kwik = (() => {
      * @returns A string representing the subscription in the format `data-sub-{name}={this.name}`.
      */
     sub(name, callback) {
-      GlobalEventBus.on(this.name, name, callback);
+      this.globalEventBus.on(this.name, name, callback);
       return `data-sub-${name}=${this.name}`;
     }
     /**
@@ -965,8 +1038,53 @@ var Kwik = (() => {
       const srcComponent = self.getAttribute(`data-sub-${name}`);
       if (!srcComponent) return;
       return (data) => {
-        GlobalEventBus.broadcast(srcComponent, name, data);
+        this.globalEventBus.broadcast(srcComponent, name, data);
       };
+    }
+    /**
+     * Registers or retrieves a global handler function.
+     *
+     * @param name - The name of the handler.
+     * @param callback - An optional callback function to register as the handler.
+     *                    If not provided, the function will return the existing handler for the given name.
+     * @returns The existing handler function if `callback` is not provided, or `true` if the handler was successfully registered.
+     */
+    handler(...args) {
+      const ctx = args[0];
+      const ctxType = typeof ctx;
+      if (args.length == 1 && ctxType == "string") {
+        const name = args[0];
+        const self = document.querySelector(this.name);
+        if (!self) return;
+        const srcComponent = self.getAttribute(`data-handler-${name}`);
+        if (!srcComponent) return;
+        if (!this.globalHandlers[srcComponent]) {
+          throw new Error(`Handler is not properly set in ${srcComponent}`);
+        }
+        if (!this.globalHandlers[srcComponent][name]) {
+          throw new Error(`Handler ${name} not found in ${srcComponent}`);
+        }
+        return this.globalHandlers[srcComponent][name];
+      }
+      if (!this.globalHandlers[this.name]) {
+        this.globalHandlers[this.name] = {};
+      }
+      switch (ctxType) {
+        case "string": {
+          const [name, callback] = args;
+          this.globalHandlers[this.name][name] = callback;
+          return `data-handler-${name}=${this.name}`;
+        }
+        case "object": {
+          let str = "";
+          loop(ctx, (callback, name) => {
+            this.globalHandlers[this.name][name] = callback;
+            str += `data-handler-${name}=${this.name} `;
+          });
+          return str;
+        }
+      }
+      return "";
     }
   };
   var component_default = Component;
@@ -994,7 +1112,7 @@ var Kwik = (() => {
      */
     build() {
       this.current = new component_default(this.callback, this.options);
-      return this.current.name;
+      return this.current;
     }
     /**
      * Converts the current object to a string representation.
@@ -1002,7 +1120,8 @@ var Kwik = (() => {
      * @returns {string} The string representation of the current object.
      */
     toString() {
-      return this.build();
+      this.build();
+      return this.current.name;
     }
     /**
      * Getter for the `close` property.
