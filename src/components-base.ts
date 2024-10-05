@@ -19,6 +19,42 @@ export type SignalItemType = {
   };
 };
 
+class _GlobalEventBus {
+  subscriber: any;
+  constructor() {
+    this.subscriber = {};
+  }
+  on(component: string, event: string, callback: (props?: any) => any) {
+    if (!this.subscriber[component]) {
+      this.subscriber[component] = new EventBus();
+    }
+    this.subscriber[component].on(event, callback);
+  }
+  broadcast(component, event, data) {
+    this.subscriber[component].broadcast(event, data);
+  }
+
+  clean(name?) {
+    if (name) {
+      const g = this.subscriber[name];
+      if (g) {
+        g.clean();
+      }
+    } else {
+      Object.keys(this.subscriber).forEach((key) => {
+        this.subscriber[key].clean();
+      });
+    }
+  }
+}
+
+/**
+ * singleton instance of GlobalEventBus
+ */
+const GlobalEventBus = new _GlobalEventBus();
+
+const GlobalHandlers = {};
+
 class ComponentBase {
   name: string;
   id: string;
@@ -32,6 +68,9 @@ class ComponentBase {
   options: ComponentOptionType;
   refs: any;
   attributeChangePayload: object;
+  globalEventBus: _GlobalEventBus;
+  globalHandlers: object;
+  destroyTimeout: number;
 
   /**
    * Creates an instance of the component with the specified callback and options.
@@ -64,6 +103,8 @@ class ComponentBase {
     this.refs = {};
     this.attributeChangePayload = {};
     this.lifecycle = new EventBus();
+    this.globalEventBus = GlobalEventBus;
+    this.globalHandlers = GlobalHandlers;
   }
   /**
    * Initializes the lifecycle events for the component.
@@ -107,6 +148,11 @@ class ComponentBase {
         next();
       }
     );
+
+    this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
+      clearTimeout(this.destroyTimeout);
+      next();
+    });
 
     this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
       loop(this.signals, (a) => {
@@ -183,15 +229,23 @@ class ComponentBase {
     });
 
     this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, (el, next) => {
-      // this.attributes = {};
       this.signals = {};
       this.styles = {};
       this.eventsStore = [];
-      this.refs = {};
-      // this.lifecycle.clean();
 
-      // console.log(185, this.lifecycle);
-      // console.log(186, this.attributes);
+      /**
+       * this will clear the remaining storage
+       * at 2 seconds after the component is destroyed
+       */
+      clearTimeout(this.destroyTimeout);
+      this.destroyTimeout = setTimeout(() => {
+        this.attributes = {};
+        this.lifecycle.clean();
+        this.refs = {};
+        this.globalHandlers = {};
+
+        this.globalEventBus.clean(this.name);
+      }, 2000);
 
       next();
     });

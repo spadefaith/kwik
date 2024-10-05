@@ -11,24 +11,6 @@ import { generateId } from "./utils/rand";
 import { ComponentOptionType } from "./types";
 import { promisify } from "./utils/async";
 
-class _GlobalEventBus {
-  subscriber: any;
-  constructor() {
-    this.subscriber = {};
-  }
-  on(component, event, callback) {
-    if (!this.subscriber[component]) {
-      this.subscriber[component] = new EventBus();
-    }
-    this.subscriber[component].on(event, callback);
-  }
-  broadcast(component, event, data) {
-    this.subscriber[component].broadcast(event, data);
-  }
-}
-
-const GlobalEventBus = new _GlobalEventBus();
-
 class Component extends ComponentCustom {
   constructor(callback, options: ComponentOptionType) {
     super(callback, options);
@@ -46,6 +28,7 @@ class Component extends ComponentCustom {
       onConnected: this.onConnected.bind(this),
       sub: this.sub.bind(this),
       pub: this.pub.bind(this),
+      handler: this.handler.bind(this),
     });
 
     this.template = template;
@@ -314,13 +297,51 @@ class Component extends ComponentCustom {
     return new Signal(value) as T;
   }
   onConnected(callback) {
+    if (typeof callback !== "function") return;
+    const getType = (callback) => callback.constructor.name;
+    const assignDisconnect = (callback) => {
+      this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, (el, next) => {
+        switch (getType(callback)) {
+          case "AsyncFunction": {
+            callback(el)
+              .then(next)
+              .catch((err) => {
+                console.error(err);
+                next();
+              });
+            return;
+          }
+          case "Function": {
+            callback(el);
+            next();
+            return;
+          }
+          default: {
+            next();
+          }
+        }
+      });
+    };
+
     this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
-      callback(el);
-      next();
-    });
-    this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, (el, next) => () => {
-      callback(el);
-      next();
+      switch (getType(callback)) {
+        case "AsyncFunction": {
+          callback(el).then((disconnectCallback) => {
+            if (typeof disconnectCallback !== "function") return next();
+            assignDisconnect(disconnectCallback);
+          });
+          return;
+        }
+        case "Function": {
+          const disconnectCallback = callback(el);
+          if (typeof disconnectCallback !== "function") return next();
+          assignDisconnect(disconnectCallback);
+          break;
+        }
+        default: {
+          next();
+        }
+      }
     });
   }
   /**
@@ -331,7 +352,7 @@ class Component extends ComponentCustom {
    * @returns A string representing the subscription in the format `data-sub-{name}={this.name}`.
    */
   sub(name, callback) {
-    GlobalEventBus.on(this.name, name, callback);
+    this.globalEventBus.on(this.name, name, callback);
     return `data-sub-${name}=${this.name}`;
   }
 
@@ -348,8 +369,64 @@ class Component extends ComponentCustom {
     const srcComponent = self.getAttribute(`data-sub-${name}`);
     if (!srcComponent) return;
     return (data) => {
-      GlobalEventBus.broadcast(srcComponent, name, data);
+      this.globalEventBus.broadcast(srcComponent, name, data);
     };
+  }
+
+  /**
+   * Registers or retrieves a global handler function.
+   *
+   * @param name - The name of the handler.
+   * @param callback - An optional callback function to register as the handler.
+   *                    If not provided, the function will return the existing handler for the given name.
+   * @returns The existing handler function if `callback` is not provided, or `true` if the handler was successfully registered.
+   */
+  handler(...args) {
+    //getter
+    const ctx = args[0];
+    const ctxType = typeof ctx;
+    if (args.length == 1 && ctxType == "string") {
+      const name = args[0];
+      const self = document.querySelector(this.name);
+      if (!self) return;
+      const srcComponent = self.getAttribute(`data-handler-${name}`);
+      if (!srcComponent) return;
+      if (!this.globalHandlers[srcComponent]) {
+        throw new Error(`Handler is not properly set in ${srcComponent}`);
+      }
+      if (!this.globalHandlers[srcComponent][name]) {
+        throw new Error(`Handler ${name} not found in ${srcComponent}`);
+      }
+      return this.globalHandlers[srcComponent][name];
+    }
+
+    //setter
+
+    if (!this.globalHandlers[this.name]) {
+      this.globalHandlers[this.name] = {};
+    }
+
+    switch (ctxType) {
+      case "string": {
+        const [name, callback] = args;
+
+        this.globalHandlers[this.name][name] = callback;
+
+        return `data-handler-${name}=${this.name}`;
+      }
+      case "object": {
+        let str = "";
+        loop(ctx, (callback, name) => {
+          this.globalHandlers[this.name][name] = callback;
+
+          str += `data-handler-${name}=${this.name} `;
+        });
+
+        return str;
+      }
+    }
+
+    return "";
   }
 }
 
