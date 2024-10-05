@@ -299,7 +299,7 @@ class Component extends ComponentCustom {
   onConnected(callback) {
     if (typeof callback !== "function") return;
     const getType = (callback) => callback.constructor.name;
-    const assignDisconnect = (callback) => {
+    const assignDisconnect = (callback, _next) => {
       this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, (el, next) => {
         switch (getType(callback)) {
           case "AsyncFunction": {
@@ -321,6 +321,8 @@ class Component extends ComponentCustom {
           }
         }
       });
+
+      _next();
     };
 
     this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
@@ -328,14 +330,14 @@ class Component extends ComponentCustom {
         case "AsyncFunction": {
           callback(el).then((disconnectCallback) => {
             if (typeof disconnectCallback !== "function") return next();
-            assignDisconnect(disconnectCallback);
+            assignDisconnect(disconnectCallback, next);
           });
           return;
         }
         case "Function": {
           const disconnectCallback = callback(el);
           if (typeof disconnectCallback !== "function") return next();
-          assignDisconnect(disconnectCallback);
+          assignDisconnect(disconnectCallback, next);
           break;
         }
         default: {
