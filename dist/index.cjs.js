@@ -337,7 +337,9 @@ var ComponentBase = class {
         this.attributes = {};
         this.lifecycle.clean();
         this.refs = {};
-        this.globalHandlers = {};
+        if (this.globalHandlers[this.name]) {
+          this.globalHandlers[this.name] = {};
+        }
         this.globalEventBus.clean(this.name);
       }, 2e3);
       next();
@@ -503,9 +505,7 @@ var ComponentCustom = class extends components_base_default {
    * @param self - The instance of the component that is being disconnected.
    */
   _disconnectedCallback(self) {
-    console.log(118, this.webComponentInstance.get(self));
-    this.webComponentInstance.delete(self);
-    console.log(119, this.webComponentInstance.has(self));
+    this.webComponentInstance.has(self) && this.webComponentInstance.delete(self);
     this.lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, null);
   }
   /**
@@ -950,7 +950,6 @@ var Component = class extends component_custom_default {
         is_rendered: false
       };
     }
-    console.log(283, this.refs);
     const $this = this;
     return {
       get current() {

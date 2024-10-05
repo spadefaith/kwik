@@ -242,7 +242,9 @@ class ComponentBase {
         this.attributes = {};
         this.lifecycle.clean();
         this.refs = {};
-        this.globalHandlers = {};
+        if (this.globalHandlers[this.name]) {
+          this.globalHandlers[this.name] = {};
+        }
 
         this.globalEventBus.clean(this.name);
       }, 2000);
