@@ -55,6 +55,8 @@ const GlobalEventBus = new _GlobalEventBus();
 
 const GlobalHandlers = {};
 
+const GlobalEvents = {};
+
 class ComponentBase {
   name: string;
   id: string;
@@ -63,13 +65,13 @@ class ComponentBase {
   callback: any;
   signals: SignalItemType;
   styles: any;
-  eventsStore: any;
   lifecycle: EventBus;
   options: ComponentOptionType;
   refs: any;
   attributeChangePayload: object;
   globalEventBus: _GlobalEventBus;
   globalHandlers: object;
+  globalEvents: object;
   destroyTimeout: number;
 
   /**
@@ -99,12 +101,12 @@ class ComponentBase {
     this.attributes = {};
     this.signals = {};
     this.styles = {};
-    this.eventsStore = [];
     this.refs = {};
     this.attributeChangePayload = {};
     this.lifecycle = new EventBus();
     this.globalEventBus = GlobalEventBus;
     this.globalHandlers = GlobalHandlers;
+    this.globalEvents = GlobalEvents;
   }
   /**
    * Initializes the lifecycle events for the component.
@@ -188,17 +190,17 @@ class ComponentBase {
 
     this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
       setTimeout(() => {
-        loop(this.eventsStore, (event) => {
-          const { type, id, handler } = event;
-          const target: HTMLElement = el.querySelector(
-            `[data-event=${type}-${id}]`
-          );
-
-          if (target) {
-            target.addEventListener(type, (e) => {
-              handler(e);
-            });
-          }
+        const events = el.querySelectorAll("[data-event]");
+        loop(events, (el, index) => {
+          if (!el) return;
+          const event = el.getAttribute("data-event");
+          if (!event) return;
+          const [type, id] = event.split("-");
+          const handler = this.globalEvents[id];
+          if (!handler) return;
+          el.addEventListener(type, (e) => {
+            handler.handler(e);
+          });
         });
       });
 
@@ -231,7 +233,6 @@ class ComponentBase {
     this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, (el, next) => {
       this.signals = {};
       this.styles = {};
-      this.eventsStore = [];
 
       /**
        * this will clear the remaining storage
@@ -247,6 +248,17 @@ class ComponentBase {
         }
 
         this.globalEventBus.clean(this.name);
+
+        /**
+         * remove from global events
+         */
+        const events = el.querySelectorAll("[data-event");
+        loop(events, (el) => {
+          const event = el.getAttribute("data-event");
+          if (!event) return;
+          const [type, id] = event.split("-");
+          delete this.globalEvents[id];
+        });
       }, 2000);
 
       next();

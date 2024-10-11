@@ -152,6 +152,7 @@ var _GlobalEventBus = class {
 };
 var GlobalEventBus = new _GlobalEventBus();
 var GlobalHandlers = {};
+var GlobalEvents = {};
 var ComponentBase = class {
   name;
   id;
@@ -167,6 +168,7 @@ var ComponentBase = class {
   attributeChangePayload;
   globalEventBus;
   globalHandlers;
+  globalEvents;
   destroyTimeout;
   /**
    * Creates an instance of the component with the specified callback and options.
@@ -200,6 +202,7 @@ var ComponentBase = class {
     this.lifecycle = new EventBus();
     this.globalEventBus = GlobalEventBus;
     this.globalHandlers = GlobalHandlers;
+    this.globalEvents = GlobalEvents;
   }
   /**
    * Initializes the lifecycle events for the component.
@@ -265,16 +268,17 @@ var ComponentBase = class {
     });
     this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
       setTimeout(() => {
-        loop(this.eventsStore, (event) => {
-          const { type, id, handler } = event;
-          const target = el.querySelector(
-            `[data-event=${type}-${id}]`
-          );
-          if (target) {
-            target.addEventListener(type, (e) => {
-              handler(e);
-            });
-          }
+        const events = el.querySelectorAll("[data-event]");
+        loop(events, (el2, index) => {
+          if (!el2) return;
+          const event = el2.getAttribute("data-event");
+          if (!event) return;
+          const [type, id] = event.split("-");
+          const handler = this.globalEvents[id];
+          if (!handler) return;
+          el2.addEventListener(type, (e) => {
+            handler.handler(e);
+          });
         });
       });
       next();
@@ -312,6 +316,13 @@ var ComponentBase = class {
           this.globalHandlers[this.name] = {};
         }
         this.globalEventBus.clean(this.name);
+        const events = el.querySelectorAll("[data-event");
+        loop(events, (el2) => {
+          const event = el2.getAttribute("data-event");
+          if (!event) return;
+          const [type, id] = event.split("-");
+          delete this.globalEvents[id];
+        });
       }, 2e3);
       next();
     });
@@ -477,7 +488,7 @@ var ComponentCustom = class extends components_base_default {
    */
   _disconnectedCallback(self) {
     this.webComponentInstance.has(self) && this.webComponentInstance.delete(self);
-    this.lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, null);
+    this.lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, self);
   }
   /**
    * Callback method that is invoked when an attribute of the custom element is added, removed, or changed.
@@ -871,11 +882,7 @@ var Component = class extends component_custom_default {
     let str = "";
     loop(events, (handler, key) => {
       const id = generateId();
-      this.eventsStore.push({
-        id,
-        type: key,
-        handler
-      });
+      this.globalEvents[id] = { type: key, handler, id };
       str += `data-event=${key}-${id} `;
     });
     return str;
@@ -975,7 +982,6 @@ var Component = class extends component_custom_default {
         }
         case "Function": {
           const disconnectCallback = callback(el);
-          console.log(this.callback, getType(callback));
           if (typeof disconnectCallback !== "function") return next();
           assignDisconnect(disconnectCallback, next);
           break;

@@ -218,11 +218,9 @@ class Component extends ComponentCustom {
 
     loop(events, (handler, key) => {
       const id = generateId();
-      this.eventsStore.push({
-        id,
-        type: key,
-        handler,
-      });
+
+      this.globalEvents[id] = { type: key, handler, id };
+
       str += `data-event=${key}-${id} `;
     });
 

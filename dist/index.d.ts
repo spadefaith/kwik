@@ -272,6 +272,7 @@ declare module "kwikjs/components-base" {
     attributeChangePayload: object;
     globalEventBus: _GlobalEventBus;
     globalHandlers: object;
+    globalEvents: object;
     destroyTimeout: number;
     /**
      * Creates an instance of the component with the specified callback and options.
