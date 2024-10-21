@@ -10,11 +10,13 @@ import { generateId } from "./utils/rand";
 
 import { ComponentOptionType } from "./types";
 import { promisify } from "./utils/async";
+import Stack from "./utils/stack";
 
 class Component extends ComponentCustom {
   constructor(callback, options: ComponentOptionType) {
     super(callback, options);
     this.callback = callback;
+    this.blueprintId = options.blueprintId;
 
     const template = this.callback({
       node: this.node.bind(this),
@@ -104,7 +106,6 @@ class Component extends ComponentCustom {
     if (!opts) {
       opts = {};
     }
-    const templateType = typeof template;
 
     /**
      * allow even if not a signal,
@@ -132,7 +133,8 @@ class Component extends ComponentCustom {
       if (!node.length) {
         return;
       }
-      loop(node, (n) => {
+
+      loop(node, (n, index) => {
         let r = template(value);
 
         if (opts.renderer) {
@@ -146,8 +148,7 @@ class Component extends ComponentCustom {
         }
         if (n.isInitialized) {
           if (opts.replace) {
-            const next = n.nextSibling;
-
+            let next = n.nextSibling;
             next && next.remove();
           }
         }
@@ -155,7 +156,34 @@ class Component extends ComponentCustom {
           return;
         }
         const rHtml = stringToHTML(r);
-        n.parentElement.insertBefore(rHtml.firstChild, n.nextSibling);
+        const parent = n.parentElement;
+        //TODO - check if this can be implemented to the false scenario
+        const test = parent.tagName == "SELECT" || parent.dataset.display == "list";
+        if (test) {
+          let currentNode = n;
+          let cNodes = rHtml.childNodes;
+          let t = "";
+          Stack(cNodes, async (child, index) => {
+            if (child.nodeType == 1) {
+              t += child.outerHTML;
+            } else if (child.nodeType == 3) {
+              t += child.data;
+            } else if (child.nodeType == 8) {
+              t += `<!--${child.data}-->`
+            }
+
+          }).then((d) => {
+
+
+
+            const parent = currentNode.parentElement;
+            if (!parent) return;
+            let ih = currentNode.parentElement.innerHTML;
+            currentNode.parentElement.innerHTML = ih + t;
+          });
+        } else {
+          n.parentElement.insertBefore(rHtml.firstChild, n.nextSibling);
+        }
       });
     };
 
@@ -176,7 +204,15 @@ class Component extends ComponentCustom {
    */
   attr(attr, ctx) {
     if (!ctx.isSignal) return;
-    const sel = `data-${attr}=${ctx.id}`;
+    //TODO
+    /**
+     * check if this approach is applicable
+     * to other callbacks,
+     */
+    const id = generateId();
+    const sel = `data-${id}=${attr}-${ctx.id}`;
+
+
 
     let callback = (value) => {
       setTimeout(() => {
@@ -185,7 +221,21 @@ class Component extends ComponentCustom {
         );
 
         loop(targets, (target) => {
-          target.setAttribute(attr, value);
+
+          //TODO - fix to be able to replace previous value, value could be different
+          if (attr == 'class') {
+            if (value == null) {
+              target.classList.remove(value);
+            } else if (!target.classList.contains(value)) {
+              target.classList.add(value);
+            }
+          } else {
+            if (value == null) {
+              target.removeAttribute(attr);
+            } else {
+              target.setAttribute(attr, value);
+            }
+          }
         });
       });
     };
@@ -218,38 +268,54 @@ class Component extends ComponentCustom {
 
     loop(events, (handler, key) => {
       const id = generateId();
-      this.eventsStore.push({
-        id,
-        type: key,
-        handler,
-      });
+
+      this.globalEvents[id] = { type: key, handler, id };
+
       str += `data-event=${key}-${id} `;
     });
 
     return str;
   }
-  props(name, initialValue) {
+
+  /**
+   * 
+   * @param name - name of the attribute of the custom component to be observed 
+   * @param initialValue - initial value of the attribute
+   * @param isRegister - default is false, if true, the signal will be registered to the component, usually props are used to other method such as render, node, attr, etc.
+   * @returns Signal;
+   */
+  props(name, initialValue, isRegister = false) {
     const signal = new Signal(initialValue);
 
     this.attributes[name] = { signal_id: signal.id, name };
 
-    // console.log(261, this.callback, name, signal.id, this.attributes[name]);
+
+    if (isRegister) {
+      this._registerSignal(signal);
+    }
 
     return signal;
   }
-  style(obj) {
+  style(obj: {
+    [key: string]: Signal
+  }) {
     const id = generateId();
     this.styles[id] = obj;
     loopAsync(obj, async (key) => {
-      const value = obj[key];
+      const value: Signal = obj[key];
 
-      if (!value.isSignal) return;
+      if (!value || !value.isSignal) return;
+
       const callback = (v) => {
         const target: HTMLElement = document.querySelector(
           `[data-style=${id}]`
         );
         if (target) {
-          target.style[key] = v;
+          if (v == null) {
+            target.style.removeProperty(key);
+          } else {
+            target.style[key] = v;
+          }
         }
       };
       this._registerSignal(value, (value) => promisify(callback, value));
@@ -293,8 +359,15 @@ class Component extends ComponentCustom {
       },
     };
   }
-  signal<T>(value) {
-    return new Signal(value) as T;
+  /**
+   * Creates a new Signal instance with the given value.
+   *
+   * @template T - The type of the value.
+   * @param value - The initial value for the Signal.
+   * @returns A new Signal instance containing the given value.
+   */
+  signal<T>(value): Signal<T> {
+    return new Signal<T>(value);
   }
   onConnected(callback) {
     if (typeof callback !== "function") return;
@@ -384,22 +457,23 @@ class Component extends ComponentCustom {
    * @returns The existing handler function if `callback` is not provided, or `true` if the handler was successfully registered.
    */
   handler(...args) {
+    const noip = function () { };
     //getter
     const ctx = args[0];
     const ctxType = typeof ctx;
     if (args.length == 1 && ctxType == "string") {
       const name = args[0];
       const self = document.querySelector(this.name);
-      if (!self) return;
+      if (!self) return noip;
       const srcComponent = self.getAttribute(`data-handler-${name}`);
-      if (!srcComponent) return;
+      if (!srcComponent) return noip;
       if (!this.globalHandlers[srcComponent]) {
         throw new Error(`Handler is not properly set in ${srcComponent}`);
       }
       if (!this.globalHandlers[srcComponent][name]) {
         throw new Error(`Handler ${name} not found in ${srcComponent}`);
       }
-      return this.globalHandlers[srcComponent][name];
+      return this.globalHandlers[srcComponent][name] || noip;
     }
 
     //setter

@@ -17,7 +17,13 @@ export default class DataWrapper {
    * @returns The wrapped data.
    */
   get data() {
-    return this.ctx;
+    if (typeof this.ctx == 'string') {
+      try {
+        return JSON.parse(this.ctx);
+
+      } catch (err) { }
+    }
+    return this.ctx
   }
 
   /**
@@ -50,7 +56,11 @@ export default class DataWrapper {
    */
   each(callback) {
     let str = "";
-    loop(this.ctx, (value, key) => {
+    let arr = this.data;
+
+
+
+    loop(arr || [], (value, key) => {
       str += callback(value, key);
     });
     return str;

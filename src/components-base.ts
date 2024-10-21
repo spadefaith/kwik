@@ -55,6 +55,10 @@ const GlobalEventBus = new _GlobalEventBus();
 
 const GlobalHandlers = {};
 
+const GlobalEvents = {};
+
+const GlobalAttributes = {};
+
 class ComponentBase {
   name: string;
   id: string;
@@ -63,14 +67,16 @@ class ComponentBase {
   callback: any;
   signals: SignalItemType;
   styles: any;
-  eventsStore: any;
   lifecycle: EventBus;
   options: ComponentOptionType;
   refs: any;
   attributeChangePayload: object;
   globalEventBus: _GlobalEventBus;
   globalHandlers: object;
+  globalEvents: object;
+  globalAttributes: object;
   destroyTimeout: number;
+  blueprintId: string;
 
   /**
    * Creates an instance of the component with the specified callback and options.
@@ -92,19 +98,20 @@ class ComponentBase {
    */
   constructor(callback: any, options = {} as any) {
     this.callback = callback;
-    this.id = generateId();
+    this.id = options.name ? options.name : generateId();
     this.name = `x-${this.id}`;
     this.options = { extension: HTMLElement, ...options };
 
     this.attributes = {};
     this.signals = {};
     this.styles = {};
-    this.eventsStore = [];
     this.refs = {};
     this.attributeChangePayload = {};
     this.lifecycle = new EventBus();
+    this.globalAttributes = GlobalAttributes;
     this.globalEventBus = GlobalEventBus;
     this.globalHandlers = GlobalHandlers;
+    this.globalEvents = GlobalEvents;
   }
   /**
    * Initializes the lifecycle events for the component.
@@ -132,6 +139,7 @@ class ComponentBase {
           signal.value = newValue;
         }
 
+
         if (oldValue != newValue) {
           /**
            * stores the updated attributes temporarily
@@ -144,6 +152,7 @@ class ComponentBase {
             signal_id: signalId,
           };
         }
+
 
         next();
       }
@@ -161,14 +170,19 @@ class ComponentBase {
         const find = Object.keys(this.attributeChangePayload).find((key) => {
           return this.attributeChangePayload[key].signal_id == signal.id;
         });
+
         let value = signal.value;
+
+
         if (find) {
           /**
            * when the signal is present in this.attributeChangePayload
            * the new value will be used as value for signal;
            * then delete that value;
            */
-          value = this.attributeChangePayload[find].newValue;
+          if (this.attributeChangePayload[find].newValue != "undefined") {
+            value = this.attributeChangePayload[find].newValue;
+          }
           delete this.attributeChangePayload[find];
         }
 
@@ -176,11 +190,9 @@ class ComponentBase {
           loop(callbacks, (callback) => {
             callback && callback(value);
           });
-        } else {
-          if (find) {
-            signal.value = value;
-          }
         }
+
+        signal.value = value;
       });
 
       next();
@@ -188,16 +200,21 @@ class ComponentBase {
 
     this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
       setTimeout(() => {
-        loop(this.eventsStore, (event) => {
-          const { type, id, handler } = event;
-          const target: HTMLElement = el.querySelector(
-            `[data-event=${type}-${id}]`
-          );
-
-          if (target) {
-            target.addEventListener(type, (e) => {
-              handler(e);
-            });
+        const events = el.querySelectorAll("[data-event]");
+        loop(events, (el, index) => {
+          if (!el) return;
+          const event = el.getAttribute("data-event");
+          if (!event) return;
+          const [type, id] = event.split("-");
+          const handler = this.globalEvents[id];
+          if (!handler) return;
+          const key = `events-${id}`;
+          if (el[key]) {
+            el.removeEventListener(type, handler.handler);
+            el.addEventListener(type, handler.handler);
+          } else {
+            el.addEventListener(type, handler.handler);
+            el[key] = true
           }
         });
       });
@@ -231,7 +248,6 @@ class ComponentBase {
     this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, (el, next) => {
       this.signals = {};
       this.styles = {};
-      this.eventsStore = [];
 
       /**
        * this will clear the remaining storage
@@ -247,6 +263,17 @@ class ComponentBase {
         }
 
         this.globalEventBus.clean(this.name);
+
+        /**
+         * remove from global events
+         */
+        const events = el.querySelectorAll("[data-event");
+        loop(events, (el) => {
+          const event = el.getAttribute("data-event");
+          if (!event) return;
+          const [type, id] = event.split("-");
+          delete this.globalEvents[id];
+        });
       }, 2000);
 
       next();

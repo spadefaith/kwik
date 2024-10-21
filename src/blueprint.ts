@@ -1,5 +1,6 @@
 import Component from "./component";
 import { ComponentOptionType } from "./types";
+import { generateId } from "./utils/rand";
 
 /**
  * Represents a blueprint for creating a component.
@@ -23,6 +24,7 @@ export default class Blueprint {
   callback: any;
   current: any;
   options: ComponentOptionType;
+  blueprintId: string;
   /**
    * Creates an instance of the class.
    *
@@ -35,8 +37,10 @@ export default class Blueprint {
   ) {
     this.callback = callback;
     this.current = null;
-
+    this.blueprintId = generateId();
     this.options = options || ({} as any);
+
+    this.options.blueprintId = this.blueprintId;
   }
 
   /**

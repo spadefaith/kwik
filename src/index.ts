@@ -1,6 +1,8 @@
 import Component from "./component";
 import Signal from "./services/signal";
 import Blueprint from "./blueprint";
-import render from "./utils/append";
+import { render, renderOnce } from "./utils/append";
 import EventBus from "./services/event-bus";
-export { render, Component, Blueprint, Signal, EventBus };
+import { generateId } from "./utils/rand";
+import DataWrapper from "./utils/data-wrapper";
+export { render, renderOnce, Component, Blueprint, Signal, EventBus, generateId, DataWrapper };

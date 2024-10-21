@@ -118,7 +118,7 @@ class ComponentCustom extends ComponentBase {
     this.webComponentInstance.has(self) &&
       this.webComponentInstance.delete(self);
 
-    this.lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, null);
+    this.lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, self);
   }
   /**
    * Callback method that is invoked when an attribute of the custom element is added, removed, or changed.
@@ -172,6 +172,8 @@ class ComponentCustom extends ComponentBase {
 
     // console.log(123, this.callback, self.outerHTML);
     // console.log(123, this.callback, "_connectedCallback");
+
+    self.setAttribute("blueprint", this.blueprintId)
   }
 
   /**
