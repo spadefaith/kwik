@@ -152,6 +152,8 @@ var _GlobalEventBus = class {
 };
 var GlobalEventBus = new _GlobalEventBus();
 var GlobalHandlers = {};
+var GlobalEvents = {};
+var GlobalAttributes = {};
 var ComponentBase = class {
   name;
   id;
@@ -160,14 +162,16 @@ var ComponentBase = class {
   callback;
   signals;
   styles;
-  eventsStore;
   lifecycle;
   options;
   refs;
   attributeChangePayload;
   globalEventBus;
   globalHandlers;
+  globalEvents;
+  globalAttributes;
   destroyTimeout;
+  blueprintId;
   /**
    * Creates an instance of the component with the specified callback and options.
    *
@@ -188,18 +192,19 @@ var ComponentBase = class {
    */
   constructor(callback, options = {}) {
     this.callback = callback;
-    this.id = generateId();
+    this.id = options.name ? options.name : generateId();
     this.name = `x-${this.id}`;
     this.options = { extension: HTMLElement, ...options };
     this.attributes = {};
     this.signals = {};
     this.styles = {};
-    this.eventsStore = [];
     this.refs = {};
     this.attributeChangePayload = {};
     this.lifecycle = new EventBus();
+    this.globalAttributes = GlobalAttributes;
     this.globalEventBus = GlobalEventBus;
     this.globalHandlers = GlobalHandlers;
+    this.globalEvents = GlobalEvents;
   }
   /**
    * Initializes the lifecycle events for the component.
@@ -248,32 +253,37 @@ var ComponentBase = class {
         });
         let value = signal.value;
         if (find) {
-          value = this.attributeChangePayload[find].newValue;
+          if (this.attributeChangePayload[find].newValue != "undefined") {
+            value = this.attributeChangePayload[find].newValue;
+          }
           delete this.attributeChangePayload[find];
         }
         if (callbacks.length) {
           loop(callbacks, (callback) => {
             callback && callback(value);
           });
-        } else {
-          if (find) {
-            signal.value = value;
-          }
         }
+        signal.value = value;
       });
       next();
     });
     this.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, (el, next) => {
       setTimeout(() => {
-        loop(this.eventsStore, (event) => {
-          const { type, id, handler } = event;
-          const target = el.querySelector(
-            `[data-event=${type}-${id}]`
-          );
-          if (target) {
-            target.addEventListener(type, (e) => {
-              handler(e);
-            });
+        const events = el.querySelectorAll("[data-event]");
+        loop(events, (el2, index) => {
+          if (!el2) return;
+          const event = el2.getAttribute("data-event");
+          if (!event) return;
+          const [type, id] = event.split("-");
+          const handler = this.globalEvents[id];
+          if (!handler) return;
+          const key = `events-${id}`;
+          if (el2[key]) {
+            el2.removeEventListener(type, handler.handler);
+            el2.addEventListener(type, handler.handler);
+          } else {
+            el2.addEventListener(type, handler.handler);
+            el2[key] = true;
           }
         });
       });
@@ -302,7 +312,6 @@ var ComponentBase = class {
     this.lifecycle.on(COMPONENT_LIFECYCLE.DESTROY, (el, next) => {
       this.signals = {};
       this.styles = {};
-      this.eventsStore = [];
       clearTimeout(this.destroyTimeout);
       this.destroyTimeout = setTimeout(() => {
         this.attributes = {};
@@ -312,6 +321,13 @@ var ComponentBase = class {
           this.globalHandlers[this.name] = {};
         }
         this.globalEventBus.clean(this.name);
+        const events = el.querySelectorAll("[data-event");
+        loop(events, (el2) => {
+          const event = el2.getAttribute("data-event");
+          if (!event) return;
+          const [type, id] = event.split("-");
+          delete this.globalEvents[id];
+        });
       }, 2e3);
       next();
     });
@@ -477,7 +493,7 @@ var ComponentCustom = class extends components_base_default {
    */
   _disconnectedCallback(self) {
     this.webComponentInstance.has(self) && this.webComponentInstance.delete(self);
-    this.lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, null);
+    this.lifecycle.broadcast(COMPONENT_LIFECYCLE.DESTROY, self);
   }
   /**
    * Callback method that is invoked when an attribute of the custom element is added, removed, or changed.
@@ -523,6 +539,7 @@ var ComponentCustom = class extends components_base_default {
       return container.appendChild(child);
     });
     await this.lifecycle.broadcast(COMPONENT_LIFECYCLE.RENDERED, self);
+    self.setAttribute("blueprint", this.blueprintId);
   }
   /**
    * Asynchronously removes all named slots from the given target element's template.
@@ -607,38 +624,99 @@ var Signal = class {
   _value;
   subscribers;
   pubsub;
-  constructor(initialValue) {
+  allWaysNotify;
+  constructor(initialValue, allWaysNotify = false) {
     this.id = generateId();
     this._value = initialValue;
     this.pubsub = new EventBus();
+    this.allWaysNotify = allWaysNotify;
   }
+  /**
+   * Notifies all subscribers by broadcasting the current signal value.
+   * 
+   * @private
+   * @method
+   * @memberof SignalService
+   */
   _notify() {
     this.pubsub.broadcast("signal", this._value);
   }
+  /**
+   * Retrieves the current value of the signal.
+   * If the value is a JSON string, it attempts to parse it.
+   * If the value is the string "undefined" or "null", it converts it to the corresponding type.
+   *
+   * @returns {T | any} The current value of the signal, parsed if necessary.
+   */
   get value() {
-    return this._value;
-  }
-  set value(v) {
-    const test = this._checkEquality(this._value, v);
-    if (test) {
-      return;
+    let v = this._value;
+    if (typeof v == "string") {
+      try {
+        v = JSON.parse(v);
+      } catch (err) {
+      }
     }
+    if (v == "undefined") v = void 0;
+    if (v == "null") v = null;
+    return v;
+  }
+  /**
+   * Sets the value of the signal. If the new value is equal to the current value,
+   * the setter returns early without making any changes. Otherwise, it updates
+   * the value and notifies any observers.
+   *
+   * @param v - The new value to set.
+   */
+  set value(v) {
+    let isSame = false;
+    if (!this.allWaysNotify) {
+      isSame = this._checkEquality(this.value, v);
+    }
+    if (isSame) return;
     this._value = v;
     this._notify();
   }
+  /**
+   * Subscribes a given subscriber function to the "signal" event.
+   * 
+   * @param subscriber - A function that will be called with the data from the "signal" event.
+   */
   subscribe(subscriber) {
     this.pubsub.on("signal", (data, next) => {
       subscriber(data);
       next();
     });
   }
+  /**
+   * Converts the value of the current instance to a string.
+   * 
+   * - If the value is a string, it returns the value directly.
+   * - If the value is an object and has a `toString` method, it calls and returns the result of `toString`.
+   * - Otherwise, it returns the JSON string representation of the value.
+   * 
+   * @returns {string} The string representation of the value.
+   */
   toString() {
-    try {
-      return this._value?.toString();
-    } catch (e) {
-      return String(this._value);
+    if (this.value == null || this.value == void 0) {
+      return String(this.value);
     }
+    if (typeof this.value == "string") {
+      return this.value;
+    } else if (typeof this.value == "object" && this.value.hasOwnProperty("toString")) {
+      return this.value.toString();
+    }
+    return JSON.stringify(this.value);
   }
+  /**
+   * Checks the equality of two values.
+   *
+   * This method compares two values `a` and `b` to determine if they are equal.
+   * It performs type checking and compares the values based on their types.
+   *
+   * @param a - The first value to compare.
+   * @param b - The second value to compare.
+   * @returns `true` if the values are equal, `false` otherwise.
+   */
   _checkEquality(a, b) {
     const typeA = typeof a;
     const typeB = typeof b;
@@ -660,6 +738,11 @@ var Signal = class {
     }
     return false;
   }
+  /**
+   * A getter that always returns `true`, indicating that this object is a signal.
+   * 
+   * @returns {boolean} Always returns `true`.
+   */
   get isSignal() {
     return true;
   }
@@ -680,6 +763,12 @@ var DataWrapper = class {
    * @returns The wrapped data.
    */
   get data() {
+    if (typeof this.ctx == "string") {
+      try {
+        return JSON.parse(this.ctx);
+      } catch (err) {
+      }
+    }
     return this.ctx;
   }
   /**
@@ -708,18 +797,48 @@ var DataWrapper = class {
    */
   each(callback) {
     let str = "";
-    loop(this.ctx, (value, key) => {
+    let arr = this.data;
+    loop(arr || [], (value, key) => {
       str += callback(value, key);
     });
     return str;
   }
 };
 
+// src/utils/stack.ts
+async function Stack(array, callback) {
+  const l = array.length;
+  let index = 0;
+  const cache = [];
+  function recurse(callback2, rej, res) {
+    if (index < l) {
+      const item = array[index];
+      callback2(item, index).then((result) => {
+        index += 1;
+        cache.push(result);
+        recurse(callback2, rej, res);
+      }).catch((err) => {
+        rej(err);
+      });
+    } else {
+      res(cache);
+    }
+  }
+  return new Promise((res, rej) => {
+    try {
+      recurse(callback, rej, res);
+    } catch (err) {
+      rej(err);
+    }
+  });
+}
+
 // src/component.ts
 var Component = class extends component_custom_default {
   constructor(callback, options) {
     super(callback, options);
     this.callback = callback;
+    this.blueprintId = options.blueprintId;
     const template = this.callback({
       node: this.node.bind(this),
       render: this.render.bind(this),
@@ -786,7 +905,6 @@ var Component = class extends component_custom_default {
     if (!opts) {
       opts = {};
     }
-    const templateType = typeof template;
     if (!ctx?.isSignal) {
       ctx = new Signal(ctx);
     }
@@ -804,7 +922,7 @@ var Component = class extends component_custom_default {
       if (!node.length) {
         return;
       }
-      loop(node, (n) => {
+      loop(node, (n, index) => {
         let r = template(value);
         if (opts.renderer) {
           r = opts.renderer.render(r, {
@@ -816,7 +934,7 @@ var Component = class extends component_custom_default {
         }
         if (n.isInitialized) {
           if (opts.replace) {
-            const next = n.nextSibling;
+            let next = n.nextSibling;
             next && next.remove();
           }
         }
@@ -824,7 +942,29 @@ var Component = class extends component_custom_default {
           return;
         }
         const rHtml = stringToHTML(r);
-        n.parentElement.insertBefore(rHtml.firstChild, n.nextSibling);
+        const parent = n.parentElement;
+        const test = parent.tagName == "SELECT" || parent.dataset.display == "list";
+        if (test) {
+          let currentNode = n;
+          let cNodes = rHtml.childNodes;
+          let t = "";
+          Stack(cNodes, async (child, index2) => {
+            if (child.nodeType == 1) {
+              t += child.outerHTML;
+            } else if (child.nodeType == 3) {
+              t += child.data;
+            } else if (child.nodeType == 8) {
+              t += `<!--${child.data}-->`;
+            }
+          }).then((d) => {
+            const parent2 = currentNode.parentElement;
+            if (!parent2) return;
+            let ih = currentNode.parentElement.innerHTML;
+            currentNode.parentElement.innerHTML = ih + t;
+          });
+        } else {
+          n.parentElement.insertBefore(rHtml.firstChild, n.nextSibling);
+        }
       });
     };
     ctx.subscribe(callback);
@@ -842,14 +982,27 @@ var Component = class extends component_custom_default {
    */
   attr(attr, ctx) {
     if (!ctx.isSignal) return;
-    const sel = `data-${attr}=${ctx.id}`;
+    const id = generateId();
+    const sel = `data-${id}=${attr}-${ctx.id}`;
     let callback = (value) => {
       setTimeout(() => {
         const targets = document.querySelectorAll(
           `[${sel}]`
         );
         loop(targets, (target) => {
-          target.setAttribute(attr, value);
+          if (attr == "class") {
+            if (value == null) {
+              target.classList.remove(value);
+            } else if (!target.classList.contains(value)) {
+              target.classList.add(value);
+            }
+          } else {
+            if (value == null) {
+              target.removeAttribute(attr);
+            } else {
+              target.setAttribute(attr, value);
+            }
+          }
         });
       });
     };
@@ -871,18 +1024,24 @@ var Component = class extends component_custom_default {
     let str = "";
     loop(events, (handler, key) => {
       const id = generateId();
-      this.eventsStore.push({
-        id,
-        type: key,
-        handler
-      });
+      this.globalEvents[id] = { type: key, handler, id };
       str += `data-event=${key}-${id} `;
     });
     return str;
   }
-  props(name, initialValue) {
+  /**
+   * 
+   * @param name - name of the attribute of the custom component to be observed 
+   * @param initialValue - initial value of the attribute
+   * @param isRegister - default is false, if true, the signal will be registered to the component, usually props are used to other method such as render, node, attr, etc.
+   * @returns Signal;
+   */
+  props(name, initialValue, isRegister = false) {
     const signal = new Signal(initialValue);
     this.attributes[name] = { signal_id: signal.id, name };
+    if (isRegister) {
+      this._registerSignal(signal);
+    }
     return signal;
   }
   style(obj) {
@@ -890,13 +1049,17 @@ var Component = class extends component_custom_default {
     this.styles[id] = obj;
     loopAsync(obj, async (key) => {
       const value = obj[key];
-      if (!value.isSignal) return;
+      if (!value || !value.isSignal) return;
       const callback = (v) => {
         const target = document.querySelector(
           `[data-style=${id}]`
         );
         if (target) {
-          target.style[key] = v;
+          if (v == null) {
+            target.style.removeProperty(key);
+          } else {
+            target.style[key] = v;
+          }
         }
       };
       this._registerSignal(value, (value2) => promisify(callback, value2));
@@ -936,6 +1099,13 @@ var Component = class extends component_custom_default {
       }
     };
   }
+  /**
+   * Creates a new Signal instance with the given value.
+   *
+   * @template T - The type of the value.
+   * @param value - The initial value for the Signal.
+   * @returns A new Signal instance containing the given value.
+   */
   signal(value) {
     return new Signal(value);
   }
@@ -975,7 +1145,6 @@ var Component = class extends component_custom_default {
         }
         case "Function": {
           const disconnectCallback = callback(el);
-          console.log(this.callback, getType(callback));
           if (typeof disconnectCallback !== "function") return next();
           assignDisconnect(disconnectCallback, next);
           break;
@@ -1022,21 +1191,23 @@ var Component = class extends component_custom_default {
    * @returns The existing handler function if `callback` is not provided, or `true` if the handler was successfully registered.
    */
   handler(...args) {
+    const noip = function() {
+    };
     const ctx = args[0];
     const ctxType = typeof ctx;
     if (args.length == 1 && ctxType == "string") {
       const name = args[0];
       const self = document.querySelector(this.name);
-      if (!self) return;
+      if (!self) return noip;
       const srcComponent = self.getAttribute(`data-handler-${name}`);
-      if (!srcComponent) return;
+      if (!srcComponent) return noip;
       if (!this.globalHandlers[srcComponent]) {
         throw new Error(`Handler is not properly set in ${srcComponent}`);
       }
       if (!this.globalHandlers[srcComponent][name]) {
         throw new Error(`Handler ${name} not found in ${srcComponent}`);
       }
-      return this.globalHandlers[srcComponent][name];
+      return this.globalHandlers[srcComponent][name] || noip;
     }
     if (!this.globalHandlers[this.name]) {
       this.globalHandlers[this.name] = {};
@@ -1066,6 +1237,7 @@ var Blueprint = class {
   callback;
   current;
   options;
+  blueprintId;
   /**
    * Creates an instance of the class.
    *
@@ -1075,7 +1247,9 @@ var Blueprint = class {
   constructor(callback, options = {}) {
     this.callback = callback;
     this.current = null;
+    this.blueprintId = generateId();
     this.options = options || {};
+    this.options.blueprintId = this.blueprintId;
   }
   /**
    * Builds a new component instance using the provided callback and options.
@@ -1106,14 +1280,29 @@ var Blueprint = class {
 };
 
 // src/utils/append.ts
-function render(target, component) {
+function render(target, component, callback) {
   target.innerHTML = "";
   target.appendChild(document.createElement(`${component}`));
+  component.current?.lifecycle.on(COMPONENT_LIFECYCLE.RENDERED, () => {
+    callback && callback();
+  });
+}
+function renderOnce(target, component) {
+  const blueprintId = component.blueprintId;
+  if (target.querySelector(`[blueprint=${blueprintId}]`)) {
+    console.log(component);
+  } else {
+    target.innerHTML = "";
+    target.appendChild(document.createElement(`${component}`));
+  }
 }
 export {
   Blueprint,
   component_default as Component,
+  DataWrapper,
   EventBus,
   Signal,
-  render
+  generateId,
+  render,
+  renderOnce
 };

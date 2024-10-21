@@ -1,4 +1,4 @@
-declare module "kwikjs/blueprint" {
+declare module 'kwikjs/blueprint' {
   import Component from "kwikjs/component";
   import { ComponentOptionType } from "kwikjs/types/index";
   /**
@@ -23,16 +23,14 @@ declare module "kwikjs/blueprint" {
     callback: any;
     current: any;
     options: ComponentOptionType;
+    blueprintId: string;
     /**
      * Creates an instance of the class.
      *
      * @param callback - A function that takes the parameters of the Component prototype.
      * @param options - An optional parameter of type ComponentOptionType. Defaults to an empty object.
      */
-    constructor(
-      callback: (params: typeof Component.prototype) => void,
-      options?: ComponentOptionType
-    );
+    constructor(callback: (params: typeof Component.prototype) => void, options?: ComponentOptionType);
     /**
      * Builds a new component instance using the provided callback and options.
      *
@@ -52,8 +50,9 @@ declare module "kwikjs/blueprint" {
      */
     get close(): any;
   }
+
 }
-declare module "kwikjs/component-custom" {
+declare module 'kwikjs/component-custom' {
   import ComponentBase from "kwikjs/components-base";
   class ComponentCustom extends ComponentBase {
     replaced: any;
@@ -148,8 +147,9 @@ declare module "kwikjs/component-custom" {
     _templateToHtml(): HTMLElement;
   }
   export default ComponentCustom;
+
 }
-declare module "kwikjs/component" {
+declare module 'kwikjs/component' {
   import ComponentCustom from "kwikjs/component-custom";
   import Signal from "kwikjs/services/signal";
   import DataWrapper from "kwikjs/utils/data-wrapper";
@@ -176,16 +176,12 @@ declare module "kwikjs/component" {
      * @param opts
      * @returns HTML comment with the signal ID.
      */
-    render(
-      ctx: any,
-      template: (params: DataWrapper) => string,
-      opts?: {
-        replace?: boolean;
-        renderer?: {
-          render: Function;
-        };
-      }
-    ): string;
+    render(ctx: any, template: (params: DataWrapper) => string, opts?: {
+      replace?: boolean;
+      renderer?: {
+        render: Function;
+      };
+    }): string;
     /**
      * Updates the attribute of elements based on a signal context.
      *  The attribute will be updated when the signal value changes.
@@ -197,13 +193,29 @@ declare module "kwikjs/component" {
      */
     attr(attr: any, ctx: any): string;
     events(events: any): string;
-    props(name: any, initialValue: any): Signal;
-    style(obj: any): string;
+    /**
+     *
+     * @param name - name of the attribute of the custom component to be observed
+     * @param initialValue - initial value of the attribute
+     * @param isRegister - default is false, if true, the signal will be registered to the component, usually props are used to other method such as render, node, attr, etc.
+     * @returns Signal;
+     */
+    props(name: any, initialValue: any, isRegister?: boolean): Signal<any>;
+    style(obj: {
+      [key: string]: Signal;
+    }): string;
     ref(callback?: any): {
       readonly current: any;
       toString(): string;
     };
-    signal<T>(value: any): T;
+    /**
+     * Creates a new Signal instance with the given value.
+     *
+     * @template T - The type of the value.
+     * @param value - The initial value for the Signal.
+     * @returns A new Signal instance containing the given value.
+     */
+    signal<T>(value: any): Signal<T>;
     onConnected(callback: any): void;
     /**
      * Subscribes to a global event bus with the specified event name and callback function.
@@ -232,8 +244,9 @@ declare module "kwikjs/component" {
     handler(...args: any[]): any;
   }
   export default Component;
+
 }
-declare module "kwikjs/components-base" {
+declare module 'kwikjs/components-base' {
   import EventBus from "kwikjs/services/event-bus";
   import Signal from "kwikjs/services/signal";
   import { ComponentOptionType } from "kwikjs/types/index";
@@ -265,14 +278,16 @@ declare module "kwikjs/components-base" {
     callback: any;
     signals: SignalItemType;
     styles: any;
-    eventsStore: any;
     lifecycle: EventBus;
     options: ComponentOptionType;
     refs: any;
     attributeChangePayload: object;
     globalEventBus: _GlobalEventBus;
     globalHandlers: object;
+    globalEvents: object;
+    globalAttributes: object;
     destroyTimeout: number;
+    blueprintId: string;
     /**
      * Creates an instance of the component with the specified callback and options.
      *
@@ -324,8 +339,9 @@ declare module "kwikjs/components-base" {
     _setLifecycle(value: any): void;
   }
   export default ComponentBase;
+
 }
-declare module "kwikjs/consts/component-lifecycle" {
+declare module 'kwikjs/consts/component-lifecycle' {
   export const BEFORE_RENDERED = "before_rendered";
   export const RENDERED = "rendered";
   export const DESTROY = "destroy";
@@ -338,16 +354,20 @@ declare module "kwikjs/consts/component-lifecycle" {
     CHANGE: string;
     ADOPTED: string;
   };
+
 }
-declare module "kwikjs/index" {
+declare module 'kwikjs/index' {
   import Component from "kwikjs/component";
   import Signal from "kwikjs/services/signal";
   import Blueprint from "kwikjs/blueprint";
-  import render from "kwikjs/utils/append";
+  import { render, renderOnce } from "kwikjs/utils/append";
   import EventBus from "kwikjs/services/event-bus";
-  export { render, Component, Blueprint, Signal, EventBus };
+  import { generateId } from "kwikjs/utils/rand";
+  import DataWrapper from "kwikjs/utils/data-wrapper";
+  export { render, renderOnce, Component, Blueprint, Signal, EventBus, generateId, DataWrapper };
+
 }
-declare module "kwikjs/services/event-bus" {
+declare module 'kwikjs/services/event-bus' {
   export default class EventBus {
     subscriber: any;
     constructor();
@@ -356,25 +376,78 @@ declare module "kwikjs/services/event-bus" {
     clean(event?: any): void;
     toString(): string;
   }
+
 }
-declare module "kwikjs/services/signal" {
+declare module 'kwikjs/services/signal' {
   import EventBus from "kwikjs/services/event-bus";
-  export default class Signal {
+  export default class Signal<T = any> {
     id: string;
-    _value: any;
+    _value: T;
     subscribers: any[];
     pubsub: EventBus;
-    constructor(initialValue: any);
+    allWaysNotify: boolean;
+    constructor(initialValue: T, allWaysNotify?: boolean);
+    /**
+     * Notifies all subscribers by broadcasting the current signal value.
+     *
+     * @private
+     * @method
+     * @memberof SignalService
+     */
     _notify(): void;
-    get value(): any;
-    set value(v: any);
+    /**
+     * Retrieves the current value of the signal.
+     * If the value is a JSON string, it attempts to parse it.
+     * If the value is the string "undefined" or "null", it converts it to the corresponding type.
+     *
+     * @returns {T | any} The current value of the signal, parsed if necessary.
+     */
+    get value(): T | any;
+    /**
+     * Sets the value of the signal. If the new value is equal to the current value,
+     * the setter returns early without making any changes. Otherwise, it updates
+     * the value and notifies any observers.
+     *
+     * @param v - The new value to set.
+     */
+    set value(v: T | any);
+    /**
+     * Subscribes a given subscriber function to the "signal" event.
+     *
+     * @param subscriber - A function that will be called with the data from the "signal" event.
+     */
     subscribe(subscriber: any): void;
+    /**
+     * Converts the value of the current instance to a string.
+     *
+     * - If the value is a string, it returns the value directly.
+     * - If the value is an object and has a `toString` method, it calls and returns the result of `toString`.
+     * - Otherwise, it returns the JSON string representation of the value.
+     *
+     * @returns {string} The string representation of the value.
+     */
     toString(): any;
+    /**
+     * Checks the equality of two values.
+     *
+     * This method compares two values `a` and `b` to determine if they are equal.
+     * It performs type checking and compares the values based on their types.
+     *
+     * @param a - The first value to compare.
+     * @param b - The second value to compare.
+     * @returns `true` if the values are equal, `false` otherwise.
+     */
     _checkEquality(a: any, b: any): boolean;
+    /**
+     * A getter that always returns `true`, indicating that this object is a signal.
+     *
+     * @returns {boolean} Always returns `true`.
+     */
     get isSignal(): boolean;
   }
+
 }
-declare module "kwikjs/utils/append" {
+declare module 'kwikjs/utils/append' {
   import Blueprint from "kwikjs/blueprint";
   /**
    * Renders a given component inside a target HTML element.
@@ -385,12 +458,11 @@ declare module "kwikjs/utils/append" {
    * @param target - The HTML element where the component will be rendered.
    * @param component - The blueprint of the component to be rendered.
    */
-  export default function render(
-    target: HTMLElement,
-    component: Blueprint
-  ): void;
+  export function render(target: HTMLElement, component: Blueprint, callback?: any): void;
+  export function renderOnce(target: HTMLElement, component: Blueprint): void;
+
 }
-declare module "kwikjs/utils/async" {
+declare module 'kwikjs/utils/async' {
   /**
    * Converts a callback-based function to a Promise-based one.
    *
@@ -400,8 +472,9 @@ declare module "kwikjs/utils/async" {
    * @throws Will throw an error if the first argument is not a function.
    */
   export const promisify: (callback: any, ...args: any[]) => Promise<unknown>;
+
 }
-declare module "kwikjs/utils/data-wrapper" {
+declare module 'kwikjs/utils/data-wrapper' {
   /**
    * A class that wraps data and provides utility methods to interact with it.
    */
@@ -429,8 +502,9 @@ declare module "kwikjs/utils/data-wrapper" {
      */
     each(callback: any): string;
   }
+
 }
-declare module "kwikjs/utils/el" {
+declare module 'kwikjs/utils/el' {
   /**
    * Retrieves all comment nodes from a given DOM node. Optionally filters comments by a target value.
    *
@@ -446,8 +520,9 @@ declare module "kwikjs/utils/el" {
    * @returns The body element of the parsed HTML document.
    */
   export const stringToHTML: (str: any) => HTMLElement;
+
 }
-declare module "kwikjs/utils/loop" {
+declare module 'kwikjs/utils/loop' {
   /**
    * Iterates over elements of an array, object, or map and invokes a callback for each element.
    *
@@ -463,11 +538,17 @@ declare module "kwikjs/utils/loop" {
    * @returns A promise that resolves when all elements have been processed.
    */
   export const loopAsync: (array: any, callback: any) => Promise<void>;
+
 }
-declare module "kwikjs/utils/rand" {
+declare module 'kwikjs/utils/rand' {
   export const generateId: () => string;
+
 }
-declare module "kwikjs" {
-  import main = require("kwikjs/index");
+declare module 'kwikjs/utils/stack' {
+  export default function Stack(array: any, callback: any): Promise<unknown>;
+
+}
+declare module 'kwikjs' {
+  import main = require('kwikjs/index');
   export = main;
 }
